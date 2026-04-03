@@ -28,6 +28,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OpenFeignConfiguration {
 
+
+    //请求拦截器  http请求头中加入用户信息
     @Bean
     public RequestInterceptor requestInterceptor() {
         return template -> {

@@ -53,6 +53,14 @@ public class TokenValidateGatewayFilterFactory extends AbstractGatewayFilterFact
 
     @Override
     public GatewayFilter apply(Config config) {
+
+//         public interface GatewayFilter extends ShortcutConfigurable {
+//                 String NAME_KEY = "name";
+//                 String VALUE_KEY = "value";
+
+//                 Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain);
+// }
+
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
             String requestPath = request.getPath().toString();
