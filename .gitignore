@@ -39,3 +39,7 @@ docker
 docker-compose.yml
 OPTIMIZATION.md
 skywalking-agent/
+
+### JWT Keys ###
+admin/src/main/resources/keys/private.pem
+gateway/src/main/resources/keys/public.pem

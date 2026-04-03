@@ -15,34 +15,37 @@
  * limitations under the License.
  */
 
-package com.lu.shortlink.admin.dto.resp;
+package com.lu.shortlink.admin.config;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
 /**
- * 用户登录接口返回响应
+ * JWT 配置属性
  */
 @Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class UserLoginRespDTO {
+@Component
+@ConfigurationProperties(prefix = "short-link.jwt")
+public class JwtProperties {
 
     /**
-     * Access Token（短期有效）
+     * Access Token 有效期（秒）
      */
-    private String accessToken;
+    private long accessTokenTtl = 1800;
 
     /**
-     * Refresh Token（长期有效）
+     * Refresh Token 有效期（秒）
      */
-    private String refreshToken;
+    private long refreshTokenTtl = 604800;
 
     /**
-     * Access Token 剩余有效时间（秒）
+     * RSA 私钥路径（classpath）
      */
-    private Long expiresIn;
+    private String privateKeyPath;
+
+    /**
+     * RSA 公钥路径（classpath）
+     */
+    private String publicKeyPath;
 }

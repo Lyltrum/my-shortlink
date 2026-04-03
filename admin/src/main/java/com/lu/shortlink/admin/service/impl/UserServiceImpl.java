@@ -18,11 +18,7 @@
 package com.lu.shortlink.admin.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.collection.CollUtil;
-import cn.hutool.core.lang.UUID;
-import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.lu.shortlink.admin.common.biz.user.UserContext;
@@ -37,6 +33,7 @@ import com.lu.shortlink.admin.dto.req.UserUpdateReqDTO;
 import com.lu.shortlink.admin.dto.resp.UserLoginRespDTO;
 import com.lu.shortlink.admin.dto.resp.UserRespDTO;
 import com.lu.shortlink.admin.service.GroupService;
+import com.lu.shortlink.admin.service.JwtTokenService;
 import com.lu.shortlink.admin.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RBloomFilter;
@@ -44,16 +41,12 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 import static com.lu.shortlink.admin.common.constant.RedisCacheConstant.LOCK_USER_REGISTER_KEY;
-import static com.lu.shortlink.admin.common.constant.RedisCacheConstant.USER_LOGIN_KEY;
 import static com.lu.shortlink.admin.common.enums.UserErrorCodeEnum.USER_EXIST;
 import static com.lu.shortlink.admin.common.enums.UserErrorCodeEnum.USER_NAME_EXIST;
 import static com.lu.shortlink.admin.common.enums.UserErrorCodeEnum.USER_SAVE_ERROR;
@@ -67,8 +60,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
 
     private final RBloomFilter<String> userRegisterCachePenetrationBloomFilter;
     private final RedissonClient redissonClient;
-    private final StringRedisTemplate stringRedisTemplate;
     private final GroupService groupService;
+    private final JwtTokenService jwtTokenService;
 
     @Override
     public UserRespDTO getUserByUsername(String username) {
@@ -117,7 +110,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
         if (!Objects.equals(requestParam.getUsername(), UserContext.getUsername())) {
             throw new ClientException("当前登录用户修改请求异常");
         }
-        LambdaUpdateWrapper<UserDO> updateWrapper = Wrappers.lambdaUpdate(UserDO.class)
+        var updateWrapper = Wrappers.lambdaUpdate(UserDO.class)
                 .eq(UserDO::getUsername, requestParam.getUsername());
         baseMapper.update(BeanUtil.toBean(requestParam, UserDO.class), updateWrapper);
     }
@@ -130,41 +123,50 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
                 .eq(UserDO::getDelFlag, 0);
         UserDO userDO = baseMapper.selectOne(queryWrapper);
         if (userDO == null) {
-            throw new ClientException("用户不存在");
+            throw new ClientException("用户不存在或密码错误");
         }
-        Map<Object, Object> hasLoginMap = stringRedisTemplate.opsForHash().entries(USER_LOGIN_KEY + requestParam.getUsername());
-        if (CollUtil.isNotEmpty(hasLoginMap)) {
-            stringRedisTemplate.expire(USER_LOGIN_KEY + requestParam.getUsername(), 30L, TimeUnit.MINUTES);
-            String token = hasLoginMap.keySet().stream()
-                    .findFirst()
-                    .map(Object::toString)
-                    .orElseThrow(() -> new ClientException("用户登录错误"));
-            return new UserLoginRespDTO(token);
-        }
-        /**
-         * Hash
-         * Key：login_用户名
-         * Value：
-         *  Key：token标识
-         *  Val：JSON 字符串（用户信息）
-         */
-        String uuid = UUID.randomUUID().toString();
-        stringRedisTemplate.opsForHash().put(USER_LOGIN_KEY + requestParam.getUsername(), uuid, JSON.toJSONString(userDO));
-        stringRedisTemplate.expire(USER_LOGIN_KEY + requestParam.getUsername(), 30L, TimeUnit.MINUTES);
-        return new UserLoginRespDTO(uuid);
+        Long userId = userDO.getId();
+        String username = userDO.getUsername();
+        String accessToken = jwtTokenService.generateAccessToken(userId.toString(), username);
+        String refreshToken = jwtTokenService.generateRefreshToken(userId.toString(), username);
+        long expiresIn = jwtTokenService.getAccessTokenTtl();
+        return UserLoginRespDTO.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .expiresIn(expiresIn)
+                .build();
     }
 
     @Override
-    public Boolean checkLogin(String username, String token) {
-        return stringRedisTemplate.opsForHash().get(USER_LOGIN_KEY + username, token) != null;
+    public UserLoginRespDTO refreshAccessToken(String refreshToken) {
+        try {
+            jwtTokenService.parseRefreshToken(refreshToken);
+        } catch (Exception e) {
+            throw new ClientException("Refresh Token 已过期或无效");
+        }
+        String userId = jwtTokenService.parseRefreshToken(refreshToken).getSubject();
+        String username = jwtTokenService.parseRefreshToken(refreshToken).get("username", String.class);
+        String newAccessToken = jwtTokenService.generateAccessToken(userId, username);
+        String newRefreshToken = jwtTokenService.generateRefreshToken(userId, username);
+        long expiresIn = jwtTokenService.getAccessTokenTtl();
+        return UserLoginRespDTO.builder()
+                .accessToken(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .expiresIn(expiresIn)
+                .build();
     }
 
     @Override
-    public void logout(String username, String token) {
-        if (checkLogin(username, token)) {
-            stringRedisTemplate.delete(USER_LOGIN_KEY + username);
-            return;
+    public Boolean checkLogin(String accessToken) {
+        try {
+            return jwtTokenService.validateToken(accessToken);
+        } catch (Exception e) {
+            return false;
         }
-        throw new ClientException("用户Token不存在或用户未登录");
+    }
+
+    @Override
+    public void logout(String accessToken) {
+        // JWT 无状态，服务端无需存储黑名单，客户端自行丢弃 Token 即可
     }
 }

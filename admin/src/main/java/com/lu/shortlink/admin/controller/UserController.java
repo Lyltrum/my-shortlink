@@ -97,19 +97,27 @@ public class UserController {
     }
 
     /**
+     * 使用 Refresh Token 刷新 Access Token
+     */
+    @PostMapping("/api/short-link/admin/v1/user/refresh")
+    public Result<UserLoginRespDTO> refreshAccessToken(@RequestParam("refreshToken") String refreshToken) {
+        return Results.success(userService.refreshAccessToken(refreshToken));
+    }
+
+    /**
      * 检查用户是否登录
      */
     @GetMapping("/api/short-link/admin/v1/user/check-login")
-    public Result<Boolean> checkLogin(@RequestParam("username") String username, @RequestParam("token") String token) {
-        return Results.success(userService.checkLogin(username, token));
+    public Result<Boolean> checkLogin(@RequestParam("accessToken") String accessToken) {
+        return Results.success(userService.checkLogin(accessToken));
     }
 
     /**
      * 用户退出登录
      */
     @DeleteMapping("/api/short-link/admin/v1/user/logout")
-    public Result<Void> logout(@RequestParam("username") String username, @RequestParam("token") String token) {
-        userService.logout(username, token);
+    public Result<Void> logout(@RequestParam("accessToken") String accessToken) {
+        userService.logout(accessToken);
         return Results.success();
     }
 }

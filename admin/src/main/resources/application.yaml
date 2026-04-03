@@ -30,3 +30,12 @@ short-link:
     enable: true
     time-window: 1
     max-access-count: 20
+  jwt:
+    # Access Token 有效期，单位：秒（默认 30 分钟）
+    access-token-ttl: 1800
+    # Refresh Token 有效期，单位：秒（默认 7 天）
+    refresh-token-ttl: 604800
+    # RSA 私钥路径（classpath）
+    private-key-path: classpath:keys/private.pem
+    # RSA 公钥路径（classpath）
+    public-key-path: classpath:keys/public.pem

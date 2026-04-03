@@ -61,27 +61,33 @@ public interface UserService extends IService<UserDO> {
     void update(UserUpdateReqDTO requestParam);
 
     /**
-     * 用户登录
+     * 用户登录，返回 Access Token + Refresh Token
      *
      * @param requestParam 用户登录请求参数
-     * @return 用户登录返回参数 Token
+     * @return 用户登录返回参数
      */
     UserLoginRespDTO login(UserLoginReqDTO requestParam);
 
     /**
-     * 检查用户是否登录
+     * 使用 Refresh Token 换取新的 Access Token
      *
-     * @param username 用户名
-     * @param token    用户登录 Token
-     * @return 用户是否登录标识
+     * @param refreshToken Refresh Token
+     * @return 新的登录返回参数
      */
-    Boolean checkLogin(String username, String token);
+    UserLoginRespDTO refreshAccessToken(String refreshToken);
 
     /**
-     * 退出登录
+     * 检查 Access Token 是否有效
      *
-     * @param username 用户名
-     * @param token    用户登录 Token
+     * @param accessToken Access Token
+     * @return Token 有效返回 True
      */
-    void logout(String username, String token);
+    Boolean checkLogin(String accessToken);
+
+    /**
+     * 退出登录（JWT 无状态，客户端丢弃 Token 即可，服务端可记录黑名单）
+     *
+     * @param accessToken Access Token
+     */
+    void logout(String accessToken);
 }

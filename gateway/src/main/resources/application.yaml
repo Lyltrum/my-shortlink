@@ -1,10 +1,10 @@
 server:
   port: 8000
+
 spring:
   application:
     name: short-link-gateway
   profiles:
-    # active: aggregation
     active: dev
   data:
     redis:
@@ -25,3 +25,7 @@ spring:
       transport:
         dashboard: localhost:8080
         port: 8720
+
+short-link:
+  jwt:
+    public-key-path: classpath:keys/public.pem

@@ -18,85 +18,89 @@
 package com.lu.shortlink.gateway.filter;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.lu.shortlink.gateway.config.Config;
+import com.lu.shortlink.gateway.config.JwtConfig;
 import com.lu.shortlink.gateway.dto.GatewayErrorResult;
+import io.jsonwebtoken.Claims;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.core.io.buffer.DataBufferFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
+import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Objects;
 
 /**
- * SpringCloud Gateway Token 拦截器
+ * SpringCloud Gateway JWT Token 验证过滤器
  */
+@Slf4j
 @Component
 public class TokenValidateGatewayFilterFactory extends AbstractGatewayFilterFactory<Config> {
 
-    private final StringRedisTemplate stringRedisTemplate;
+    private final JwtConfig jwtConfig;
 
-    public TokenValidateGatewayFilterFactory(StringRedisTemplate stringRedisTemplate) {
+    public TokenValidateGatewayFilterFactory(JwtConfig jwtConfig) {
         super(Config.class);
-        this.stringRedisTemplate = stringRedisTemplate;
+        this.jwtConfig = jwtConfig;
     }
 
     @Override
     public GatewayFilter apply(Config config) {
-
-//         public interface GatewayFilter extends ShortcutConfigurable {
-//                 String NAME_KEY = "name";
-//                 String VALUE_KEY = "value";
-
-//                 Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain);
-// }
-
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
             String requestPath = request.getPath().toString();
-            String requestMethod = request.getMethod().name();
-            //如果不在白名单 就进行token逻辑校验
-            if (!isPathInWhiteList(requestPath, requestMethod, config.getWhitePathList())) {
-                String username = request.getHeaders().getFirst("username");
-                String token = request.getHeaders().getFirst("token");
-                Object userInfo;
-                if (StringUtils.hasText(username) && StringUtils.hasText(token) && 
-                (userInfo = stringRedisTemplate.opsForHash().get("short-link:login:" + username, token)) != null) {
-                    // 网关把用户 ID、姓名写到请求头，后端服务直接用。
-                    JSONObject userInfoJsonObject = JSON.parseObject(userInfo.toString());
-                    ServerHttpRequest.Builder builder = exchange.getRequest().mutate().headers(httpHeaders -> {
-                        httpHeaders.set("userId", userInfoJsonObject.getString("id"));
-                        httpHeaders.set("realName", URLEncoder.encode(userInfoJsonObject.getString("realName"), StandardCharsets.UTF_8));
-                    });
-                    return chain.filter(exchange.mutate().request(builder.build()).build());
-                }
-                ServerHttpResponse response = exchange.getResponse();
-                response.setStatusCode(HttpStatus.UNAUTHORIZED);
-                return response.writeWith(Mono.fromSupplier(() -> {
-                    DataBufferFactory bufferFactory = response.bufferFactory();
-                    GatewayErrorResult resultMessage = GatewayErrorResult.builder()
-                            .status(HttpStatus.UNAUTHORIZED.value())
-                            .message("Token validation error")
-                            .build();
-                    return bufferFactory.wrap(JSON.toJSONString(resultMessage).getBytes());
-                }));
+            // 如果在白名单中则跳过 JWT 校验
+            if (isPathInWhiteList(requestPath, config.getWhitePathList())) {
+                return chain.filter(exchange);
             }
-            return chain.filter(exchange);
+            // 从 Authorization: Bearer <token> 头部获取 JWT
+            String authHeader = request.getHeaders().getFirst("Authorization");
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return writeError(exchange, "Missing or invalid Authorization header");
+            }
+            String token = authHeader.substring(7);
+            try {
+                // 验签并解析 Access Token
+                Claims claims = jwtConfig.parseAccessToken(token);
+                String userId = claims.getSubject();
+                String username = claims.get("username", String.class);
+                // 将用户信息注入下游 Header（与原有逻辑保持兼容）
+                ServerHttpRequest mutatedRequest = request.mutate()
+                        .headers(httpHeaders -> {
+                            httpHeaders.set("userId", userId);
+                            httpHeaders.set("username", URLEncoder.encode(username, StandardCharsets.UTF_8));
+                        })
+                        .build();
+                return chain.filter(exchange.mutate().request(mutatedRequest).build());
+            } catch (Exception e) {
+                log.warn("JWT 验签失败 [{}]: {}", requestPath, e.getMessage());
+                return writeError(exchange, "Invalid or expired token");
+            }
         };
     }
 
-    private boolean isPathInWhiteList(String requestPath, String requestMethod, List<String> whitePathList) {
-        return (!CollectionUtils.isEmpty(whitePathList) && whitePathList.stream().anyMatch(requestPath::startsWith)) 
-        || (Objects.equals(requestPath, "/api/short-link/admin/v1/user") && Objects.equals(requestMethod, "POST"));
+    private boolean isPathInWhiteList(String requestPath, List<String> whitePathList) {
+        return whitePathList != null
+                && whitePathList.stream().anyMatch(requestPath::startsWith);
+    }
+
+    private Mono<Void> writeError(ServerWebExchange exchange, String message) {
+        ServerHttpResponse response = exchange.getResponse();
+        response.setStatusCode(HttpStatus.UNAUTHORIZED);
+        GatewayErrorResult resultMessage = GatewayErrorResult.builder()
+                .status(HttpStatus.UNAUTHORIZED.value())
+                .message(message)
+                .build();
+        DataBufferFactory bufferFactory = response.bufferFactory();
+        return response.writeWith(Mono.fromSupplier(() ->
+                bufferFactory.wrap(JSON.toJSONString(resultMessage).getBytes(StandardCharsets.UTF_8))
+        ));
     }
 }

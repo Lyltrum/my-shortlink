@@ -12,6 +12,8 @@ spring:
                 whitePathList:
                   - /api/short-link/admin/v1/user/login
                   - /api/short-link/admin/v1/user/has-username
+                  - /api/short-link/admin/v1/user/refresh
+                  - /api/short-link/admin/v1/user
 
         - id: short-link-project
           uri: lb://short-link-project/api/short-link/**
@@ -24,3 +26,8 @@ spring:
           uri: lb://short-link-project
           predicates:
             - Path=/{short-uri}
+
+short-link:
+  jwt:
+    # Gateway 只加载公钥进行验签，公钥文件放在 gateway 资源目录
+    public-key-path: classpath:keys/public.pem
