@@ -37,7 +37,7 @@ public class UserFlowRiskControlConfiguration {
     /**
      * 流量风控时间窗口，单位：秒
      */
-    private String timeWindow;
+    private Long timeWindow;
 
     /**
      * 流量风控时间窗口内可访问次数

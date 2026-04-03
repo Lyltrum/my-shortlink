@@ -36,18 +36,28 @@ public class JwtUtil {
     }
 
     /**
-     * 从 PEM 文件加载公钥
+     * 从 PEM 文件加载公钥，支持 classpath: 和 file: 前缀
      */
-    public static PublicKey loadPublicKey(String publicKeyPath) {
+    public static PublicKey loadPublicKey(String keyPath) {
         try {
-            String content = Files.readString(Path.of(publicKeyPath.replace("file:", "")))
+            String content;
+            if (keyPath.startsWith("classpath:")) {
+                String resourcePath = keyPath.substring("classpath:".length());
+                content = new String(
+                        JwtUtil.class.getClassLoader().getResourceAsStream(resourcePath).readAllBytes()
+                );
+            } else {
+                String filePath = keyPath.startsWith("file:") ? keyPath.substring("file:".length()) : keyPath;
+                content = Files.readString(Path.of(filePath));
+            }
+            content = content
                     .replace("-----BEGIN PUBLIC KEY-----", "")
                     .replace("-----END PUBLIC KEY-----", "")
                     .replaceAll("\\s", "");
             X509EncodedKeySpec spec = new X509EncodedKeySpec(Base64.getDecoder().decode(content));
             return java.security.KeyFactory.getInstance("RSA").generatePublic(spec);
         } catch (Exception e) {
-            throw new RuntimeException("加载公钥失败: " + publicKeyPath, e);
+            throw new RuntimeException("加载公钥失败: " + keyPath, e);
         }
     }
 

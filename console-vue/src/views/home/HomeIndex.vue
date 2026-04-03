@@ -64,7 +64,7 @@
 <script setup>
 import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { removeKey, removeUsername, getToken, getUsername } from '@/core/auth.js'
+import { clearAll, getToken } from '@/core/auth.js'
 import { ElMessage } from 'element-plus'
 import { User, SwitchButton } from '@element-plus/icons-vue'
 const { proxy } = getCurrentInstance()
@@ -77,15 +77,9 @@ const toMine = () => {
 }
 // 登出
 const logout = async () => {
-  const token = getToken()
-  const username = getUsername()
-  // 请求登出的接口
-  await API.user.logout({ token, username })
-  // 删除cookies中的token和username
-  removeUsername()
-  removeKey()
-  localStorage.removeItem('token')
-  localStorage.removeItem('username')
+  const accessToken = getToken()
+  await API.user.logout({ accessToken })
+  clearAll()
   router.push('/login')
   ElMessage.success('成功退出！')
 }

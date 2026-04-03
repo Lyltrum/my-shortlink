@@ -63,7 +63,7 @@ public class UserFlowRiskControlFilter implements Filter {
         String username = Optional.ofNullable(UserContext.getUsername()).orElse("other");
         Long result;
         try {
-            result = stringRedisTemplate.execute(redisScript, Lists.newArrayList(username), userFlowRiskControlConfiguration.getTimeWindow());
+            result = stringRedisTemplate.execute(redisScript, Lists.newArrayList(username), userFlowRiskControlConfiguration.getTimeWindow().toString());
         } catch (Throwable ex) {
             log.error("执行用户请求流量限制LUA脚本出错", ex);
             returnJson((HttpServletResponse) response, JSON.toJSONString(Results.failure(new ClientException(FLOW_LIMIT_ERROR))));

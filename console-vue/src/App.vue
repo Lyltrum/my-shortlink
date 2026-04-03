@@ -1,11 +1,6 @@
 <script setup>
 // element汉化
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { removeKey } from '@/core/auth.js'
-const removeCookies = () => {
-  removeKey('Authorization')
-}
-// test('should first', () => { second })
 </script>
 
 <template>

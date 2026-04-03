@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { setToken, setUsername, getUsername } from '@/core/auth.js'
+import { setToken, setUsername, getUsername, setRefreshToken } from '@/core/auth.js'
 import { ref, reactive, onMounted, onBeforeUnmount, watch, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -206,12 +206,13 @@ const addUser = (formEl) => {
           ElMessage.warning(res2.data.message)
         } else {
           const res3 = await API.user.login({ username: addForm.username, password: addForm.password })
-          const token = res3?.data?.data?.token
-          // 将username和token保存到cookies中和localStorage中
-          if (token) {
-            setToken(token)
+          const { accessToken, refreshToken } = res3?.data?.data || {}
+          if (accessToken) {
+            setToken(accessToken)
+            setRefreshToken(refreshToken)
             setUsername(addForm.username)
-            localStorage.setItem('token', token)
+            localStorage.setItem('token', accessToken)
+            localStorage.setItem('refresh_token', refreshToken)
             localStorage.setItem('username', addForm.username)
           }
           ElMessage.success('注册登录成功！')
@@ -243,12 +244,13 @@ const verificationLogin = (formEl) => {
       loginForm.password = verification.code
       const res1 = await API.user.login(loginForm)
       if (res1.data.code === '0') {
-        const token = res1?.data?.data?.token
-        // 将username和token保存到cookies中和localStorage中
-        if (token) {
-          setToken(token)
+        const { accessToken, refreshToken } = res1?.data?.data || {}
+        if (accessToken) {
+          setToken(accessToken)
+          setRefreshToken(refreshToken)
           setUsername(loginForm.username)
-          localStorage.setItem('token', token)
+          localStorage.setItem('token', accessToken)
+          localStorage.setItem('refresh_token', refreshToken)
           localStorage.setItem('username', loginForm.username)
         }
         ElMessage.success('登录成功！')
@@ -274,20 +276,15 @@ const login = (formEl) => {
   if (!formEl) return
   formEl.validate(async (valid) => {
     if (valid) {
-      // 当域名为下面这两个时，弹出公众号弹框
-      // let domain = window.location.host
-      // if (domain === 'shortlink.magestack.cn' || domain === 'shortlink.lu.com') {
-      //   isWC.value = true
-      //   return
-      // }
       const res1 = await API.user.login(loginForm)
       if (res1.data.code === '0') {
-        const token = res1?.data?.data?.token
-        // 将username和token保存到cookies中和localStorage中
-        if (token) {
-          setToken(token)
+        const { accessToken, refreshToken } = res1?.data?.data || {}
+        if (accessToken) {
+          setToken(accessToken)
+          setRefreshToken(refreshToken)
           setUsername(loginForm.username)
-          localStorage.setItem('token', token)
+          localStorage.setItem('token', accessToken)
+          localStorage.setItem('refresh_token', refreshToken)
           localStorage.setItem('username', loginForm.username)
         }
         ElMessage.success('登录成功！')

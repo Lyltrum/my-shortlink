@@ -1,46 +1,98 @@
 import axios from 'axios'
-import {getToken, getUsername} from '@/core/auth.js'
-import {isNotEmpty} from '@/utils/plugins.js'
-import router from "@/router";
+import { getToken, getUsername, getRefreshToken, setToken, setRefreshToken, clearAll } from '@/core/auth.js'
+import { isNotEmpty } from '@/utils/plugins.js'
+import router from "@/router"
 import { ElMessage } from 'element-plus'
+import userApi from '@/api/modules/user'
 
-// const router = useRouter()
 const baseURL = '/api/short-link/admin/v1'
-// 创建实例
+
 const http = axios.create({
-    // api 代理为服务器请求地址
-    baseURL: baseURL,
-    timeout: 15000
+  baseURL: baseURL,
+  timeout: 15000
 })
-// 请求拦截 -->在请求发送之前做一些事情
+
+let isRefreshing = false
+let refreshSubscribers = []
+
+function subscribeTokenRefresh(cb) {
+  refreshSubscribers.push(cb)
+}
+
+function onTokenRefreshed(newAccessToken, newRefreshToken) {
+  refreshSubscribers.forEach(cb => cb(newAccessToken, newRefreshToken))
+  refreshSubscribers = []
+}
+
 http.interceptors.request.use(
-    (config) => {
-        config.headers.Token = isNotEmpty(getToken()) ? getToken() : ''
-        config.headers.Username = isNotEmpty(getUsername()) ? getUsername() : ''
-        return config
-    },
-    (error) => {
-        return Promise.reject(error)
+  (config) => {
+    const token = getToken()
+    if (isNotEmpty(token)) {
+      config.headers['Authorization'] = 'Bearer ' + token
     }
+    config.headers['Username'] = isNotEmpty(getUsername()) ? getUsername() : ''
+    return config
+  },
+  (error) => Promise.reject(error)
 )
-// 响应拦截 -->在返回结果之前做一些事情
+
 http.interceptors.response.use(
-    (res) => {
-        if (res.status == 0 || res.status == 200) {
-            // 请求成功对响应数据做处理，此处返回的数据是axios.then(res)中接收的数据
-            // code值为 0 或 200 时视为成功
-            return Promise.resolve(res)
-        }
-        return Promise.reject(res)
-    },
-    (err) => {
-        // 在请求错误时要做的事儿
-        // 此处返回的数据是axios.catch(err)中接收的数据
-        if (err.response.status === 401) {
-            localStorage.removeItem('token')
-            router.push('/login')
-        }
-        return Promise.reject(err)
+  (res) => {
+    if (res.status == 0 || res.status == 200) {
+      return Promise.resolve(res)
     }
+    return Promise.reject(res)
+  },
+  async (err) => {
+    const originalRequest = err.config
+
+    if (err.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          subscribeTokenRefresh((newAccessToken, newRefreshToken) => {
+            originalRequest.headers['Authorization'] = 'Bearer ' + newAccessToken
+            setToken(newAccessToken)
+            setRefreshToken(newRefreshToken)
+            resolve(http(originalRequest))
+          })
+        })
+      }
+
+      originalRequest._retry = true
+      isRefreshing = true
+
+      try {
+        const refreshToken = getRefreshToken()
+        if (!refreshToken) {
+          throw new Error('No refresh token')
+        }
+        const res = await userApi.refreshAccessToken(refreshToken)
+        const { accessToken, refreshToken: newRefreshToken } = res.data.data
+        setToken(accessToken)
+        setRefreshToken(newRefreshToken)
+        localStorage.setItem('token', accessToken)
+        localStorage.setItem('refresh_token', newRefreshToken)
+
+        originalRequest.headers['Authorization'] = 'Bearer ' + accessToken
+        onTokenRefreshed(accessToken, newRefreshToken)
+        isRefreshing = false
+
+        return http(originalRequest)
+      } catch (refreshError) {
+        isRefreshing = false
+        clearAll()
+        ElMessage.error('登录已过期，请重新登录')
+        router.push('/login')
+        return Promise.reject(refreshError)
+      }
+    }
+
+    if (err.response?.status === 401) {
+      clearAll()
+      router.push('/login')
+    }
+    return Promise.reject(err)
+  }
 )
+
 export default http

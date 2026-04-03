@@ -84,7 +84,9 @@ public class GlobalExceptionHandler {
         if (Objects.equals(throwable.getClass().getSuperclass().getSimpleName(), AbstractException.class.getSimpleName())) {
             String errorCode = ReflectUtil.getFieldValue(throwable, "errorCode").toString();
             String errorMessage = ReflectUtil.getFieldValue(throwable, "errorMessage").toString();
-            return Results.failure(errorCode, errorMessage);
+            return new Result<Void>()
+                    .setCode(errorCode)
+                    .setMessage(errorMessage);
         }
         return Results.failure();
     }

@@ -24,11 +24,18 @@ export default {
       data
     })
   },
-  // 退出登录
+  // 退出登录（JWT 无状态，客户端丢弃 token 即可）
   logout(data) {
     return http({
-      url: '/user/logout?token=' + data.token + '&username=' + data.username,
+      url: '/user/logout?accessToken=' + data.accessToken,
       method: 'delete'
+    })
+  },
+  // 刷新 Access Token
+  refreshAccessToken(refreshToken) {
+    return http({
+      url: '/user/refresh?refreshToken=' + refreshToken,
+      method: 'get'
     })
   },
   // 检查用户名是否可用
