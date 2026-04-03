@@ -34,3 +34,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+Claude.md
+docker
+docker-compose.yml
+OPTIMIZATION.md
+skywalking-agent/
