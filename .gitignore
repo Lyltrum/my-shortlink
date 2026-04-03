@@ -38,6 +38,7 @@ Claude.md
 docker
 docker-compose.yml
 OPTIMIZATION.md
+JWT_IMPLEMENTATION.md
 skywalking-agent/
 
 ### JWT Keys ###
