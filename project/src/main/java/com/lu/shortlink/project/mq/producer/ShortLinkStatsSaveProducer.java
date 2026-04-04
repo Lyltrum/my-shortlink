@@ -18,16 +18,18 @@
 package com.lu.shortlink.project.mq.producer;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
 
 /**
- * 短链接监控状态保存消息队列生产者
+ * 短链接监控状态保存消息队列生产者（本地缓冲 + 批量 flush）
  */
 @Component
 @RequiredArgsConstructor
@@ -35,10 +37,29 @@ public class ShortLinkStatsSaveProducer {
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    private final ConcurrentLinkedQueue<Map<String, String>> statsBuffer = new ConcurrentLinkedQueue<>();
+
     /**
-     * 发送延迟消费短链接统计
+     * 统计记录入本地缓冲队列，由调度器批量 flush 到 Redis Stream
      */
     public void send(Map<String, String> producerMap) {
-        stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_TOPIC_KEY, producerMap);
+        statsBuffer.offer(producerMap);
+    }
+
+    /**
+     * 将缓冲队列中所有记录批量写入 Redis Stream
+     */
+    public void flush() {
+        if (statsBuffer.isEmpty()) {
+            return;
+        }
+        List<Map<String, String>> batch = new ArrayList<>();
+        Map<String, String> item;
+        while ((item = statsBuffer.poll()) != null) {
+            batch.add(item);
+        }
+        for (Map<String, String> record : batch) {
+            stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_TOPIC_KEY, record);
+        }
     }
 }

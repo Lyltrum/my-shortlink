@@ -41,6 +41,9 @@ OPTIMIZATION.md
 JWT_IMPLEMENTATION.md
 skywalking-agent/
 
+### Logs ###
+logs/
+
 ### JWT Keys ###
 admin/src/main/resources/keys/private.pem
 gateway/src/main/resources/keys/public.pem

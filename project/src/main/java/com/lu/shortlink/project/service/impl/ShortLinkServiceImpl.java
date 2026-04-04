@@ -47,6 +47,7 @@ import com.lu.shortlink.project.dto.resp.ShortLinkBatchCreateRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkCreateRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkGroupCountQueryRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkPageRespDTO;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.lu.shortlink.project.mq.producer.ShortLinkStatsSaveProducer;
 import com.lu.shortlink.project.service.ShortLinkService;
 import com.lu.shortlink.project.toolkit.HashUtil;
@@ -108,6 +109,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
     private final RedissonClient redissonClient;
     private final ShortLinkStatsSaveProducer shortLinkStatsSaveProducer;
     private final GotoDomainWhiteListConfiguration gotoDomainWhiteListConfiguration;
+    private final Cache<String, String> shortLinkLocalCache;
 
     @Value("${short-link.domain.default}")
     private String createShortLinkDefaultDomain;
@@ -336,6 +338,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 || !Objects.equals(hasShortLinkDO.getValidDate(), requestParam.getValidDate())
                 || !Objects.equals(hasShortLinkDO.getOriginUrl(), requestParam.getOriginUrl())) {
             stringRedisTemplate.delete(String.format(GOTO_SHORT_LINK_KEY, requestParam.getFullShortUrl()));
+            shortLinkLocalCache.invalidate(requestParam.getFullShortUrl());
             Date currentDate = new Date();
             //只是短链接修改为永久有效期或者延长了有效期 则删除空值缓存
             if (hasShortLinkDO.getValidDate() != null && hasShortLinkDO.getValidDate().before(currentDate)) {
@@ -383,9 +386,17 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .orElse("");
         String fullShortUrl = serverName + serverPort + "/" + shortUri;
 
+// L1 本地缓存命中（跳过 Redis 网络开销）
+        String localCachedUrl = shortLinkLocalCache.getIfPresent(fullShortUrl);
+        if (localCachedUrl != null) {
+            shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
+            ((HttpServletResponse) response).sendRedirect(localCachedUrl);
+            return;
+        }
 // 从缓存中获取长链接
         String originalLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
         if (StrUtil.isNotBlank(originalLink)) {
+            shortLinkLocalCache.put(fullShortUrl, originalLink);
             shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
             ((HttpServletResponse) response).sendRedirect(originalLink);
             return;
@@ -411,6 +422,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             // 主缓存double check
             originalLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
             if (StrUtil.isNotBlank(originalLink)) {
+                shortLinkLocalCache.put(fullShortUrl, originalLink);
                 shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
                 ((HttpServletResponse) response).sendRedirect(originalLink);
                 return;
@@ -452,6 +464,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                     shortLinkDO.getOriginUrl(),
                     LinkUtil.getLinkCacheValidTime(shortLinkDO.getValidDate()), TimeUnit.MILLISECONDS
             );
+            shortLinkLocalCache.put(fullShortUrl, shortLinkDO.getOriginUrl());
             shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
             ((HttpServletResponse) response).sendRedirect(shortLinkDO.getOriginUrl());
         } finally {

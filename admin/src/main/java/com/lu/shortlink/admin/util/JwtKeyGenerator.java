@@ -102,9 +102,35 @@ public class JwtKeyGenerator {
         }
     }
 
+    public static PublicKey loadPublicKey(java.io.InputStream in) {
+        try {
+            String key = new String(in.readAllBytes(), StandardCharsets.UTF_8)
+                    .replace("-----BEGIN PUBLIC KEY-----", "")
+                    .replace("-----END PUBLIC KEY-----", "")
+                    .replaceAll("\\s", "");
+            X509EncodedKeySpec spec = new X509EncodedKeySpec(Base64.getDecoder().decode(key));
+            return java.security.KeyFactory.getInstance("RSA").generatePublic(spec);
+        } catch (Exception e) {
+            throw new RuntimeException("加载公钥失败", e);
+        }
+    }
+
     public static PrivateKey loadPrivateKey(String path) {
         try {
             String key = FileUtil.readString(path, StandardCharsets.UTF_8)
+                    .replace("-----BEGIN PRIVATE KEY-----", "")
+                    .replace("-----END PRIVATE KEY-----", "")
+                    .replaceAll("\\s", "");
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(Base64.getDecoder().decode(key));
+            return java.security.KeyFactory.getInstance("RSA").generatePrivate(spec);
+        } catch (Exception e) {
+            throw new RuntimeException("加载私钥失败", e);
+        }
+    }
+
+    public static PrivateKey loadPrivateKey(java.io.InputStream in) {
+        try {
+            String key = new String(in.readAllBytes(), StandardCharsets.UTF_8)
                     .replace("-----BEGIN PRIVATE KEY-----", "")
                     .replace("-----END PRIVATE KEY-----", "")
                     .replaceAll("\\s", "");

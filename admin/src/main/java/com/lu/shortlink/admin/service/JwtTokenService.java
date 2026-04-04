@@ -50,15 +50,11 @@ public class JwtTokenService {
         try {
             String privateKeyPath = jwtProperties.getPrivateKeyPath();
             String publicKeyPath = jwtProperties.getPublicKeyPath();
-            JwtKeyGenerator.ensureKeyPair(
-                    resourceLoader.getResource(privateKeyPath).getFilename(),
-                    resourceLoader.getResource(publicKeyPath).getFilename()
-            );
             this.privateKey = JwtKeyGenerator.loadPrivateKey(
-                    resourceLoader.getResource(privateKeyPath).getFile().getAbsolutePath()
+                    resourceLoader.getResource(privateKeyPath).getInputStream()
             );
             this.publicKey = JwtKeyGenerator.loadPublicKey(
-                    resourceLoader.getResource(publicKeyPath).getFile().getAbsolutePath()
+                    resourceLoader.getResource(publicKeyPath).getInputStream()
             );
             log.info("JWT RSA 密钥加载完毕，AccessToken TTL={}s, RefreshToken TTL={}s",
                     jwtProperties.getAccessTokenTtl(), jwtProperties.getRefreshTokenTtl());
