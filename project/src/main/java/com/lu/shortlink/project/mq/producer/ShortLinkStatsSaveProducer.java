@@ -18,6 +18,7 @@
 package com.lu.shortlink.project.mq.producer;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +32,7 @@ import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LI
 /**
  * 短链接监控状态保存消息队列生产者（本地缓冲 + 批量 flush）
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class ShortLinkStatsSaveProducer {
@@ -59,7 +61,12 @@ public class ShortLinkStatsSaveProducer {
             batch.add(item);
         }
         for (Map<String, String> record : batch) {
-            stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_TOPIC_KEY, record);
+            try {
+                stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_TOPIC_KEY, record);
+            } catch (Exception e) {
+                log.error("统计记录写入 Redis Stream 失败，重新入队。record={}", record, e);
+                statsBuffer.offer(record);
+            }
         }
     }
 }

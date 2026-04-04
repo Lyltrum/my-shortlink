@@ -47,7 +47,7 @@ import com.lu.shortlink.project.dto.resp.ShortLinkBatchCreateRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkCreateRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkGroupCountQueryRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkPageRespDTO;
-import com.github.benmanes.caffeine.cache.Cache;
+import com.lu.shortlink.project.cache.ShortLinkCacheManager;
 import com.lu.shortlink.project.mq.producer.ShortLinkStatsSaveProducer;
 import com.lu.shortlink.project.service.ShortLinkService;
 import com.lu.shortlink.project.toolkit.HashUtil;
@@ -88,7 +88,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.GOTO_IS_NULL_SHORT_LINK_KEY;
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.GOTO_SHORT_LINK_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.LOCK_GID_UPDATE_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.LOCK_GOTO_SHORT_LINK_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_CREATE_LOCK_KEY;
@@ -109,7 +108,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
     private final RedissonClient redissonClient;
     private final ShortLinkStatsSaveProducer shortLinkStatsSaveProducer;
     private final GotoDomainWhiteListConfiguration gotoDomainWhiteListConfiguration;
-    private final Cache<String, String> shortLinkLocalCache;
+    private final ShortLinkCacheManager shortLinkCacheManager;
 
     @Value("${short-link.domain.default}")
     private String createShortLinkDefaultDomain;
@@ -158,11 +157,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             throw new ServiceException(String.format("短链接：%s 生成重复", fullShortUrl));
         }
         // 项目中短链接缓存预热是怎么做的？
-        stringRedisTemplate.opsForValue().set(
-                String.format(GOTO_SHORT_LINK_KEY, fullShortUrl),
-                requestParam.getOriginUrl(),
-                LinkUtil.getLinkCacheValidTime(requestParam.getValidDate()), TimeUnit.MILLISECONDS
-        );
+        shortLinkCacheManager.put(fullShortUrl, requestParam.getOriginUrl(), requestParam.getValidDate());
         // 删除短链接后，布隆过滤器如何删除？
         shortUriCreateCachePenetrationBloomFilter.add(fullShortUrl);
         return ShortLinkCreateRespDTO.builder()
@@ -212,11 +207,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             } catch (DuplicateKeyException ex) {
                 throw new ServiceException(String.format("短链接：%s 生成重复", fullShortUrl));
             }
-            stringRedisTemplate.opsForValue().set(
-                    String.format(GOTO_SHORT_LINK_KEY, fullShortUrl),
-                    requestParam.getOriginUrl(),
-                    LinkUtil.getLinkCacheValidTime(requestParam.getValidDate()), TimeUnit.MILLISECONDS
-            );
+            shortLinkCacheManager.put(fullShortUrl, requestParam.getOriginUrl(), requestParam.getValidDate());
         } finally {
             lock.unlock();
         }
@@ -337,8 +328,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         if (!Objects.equals(hasShortLinkDO.getValidDateType(), requestParam.getValidDateType())
                 || !Objects.equals(hasShortLinkDO.getValidDate(), requestParam.getValidDate())
                 || !Objects.equals(hasShortLinkDO.getOriginUrl(), requestParam.getOriginUrl())) {
-            stringRedisTemplate.delete(String.format(GOTO_SHORT_LINK_KEY, requestParam.getFullShortUrl()));
-            shortLinkLocalCache.invalidate(requestParam.getFullShortUrl());
+            shortLinkCacheManager.invalidate(requestParam.getFullShortUrl());
             Date currentDate = new Date();
             //只是短链接修改为永久有效期或者延长了有效期 则删除空值缓存
             if (hasShortLinkDO.getValidDate() != null && hasShortLinkDO.getValidDate().before(currentDate)) {
@@ -386,19 +376,11 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .orElse("");
         String fullShortUrl = serverName + serverPort + "/" + shortUri;
 
-// L1 本地缓存命中（跳过 Redis 网络开销）
-        String localCachedUrl = shortLinkLocalCache.getIfPresent(fullShortUrl);
-        if (localCachedUrl != null) {
+// L1 → L2 多级缓存命中
+        String cachedUrl = shortLinkCacheManager.get(fullShortUrl);
+        if (cachedUrl != null) {
             shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
-            ((HttpServletResponse) response).sendRedirect(localCachedUrl);
-            return;
-        }
-// 从缓存中获取长链接
-        String originalLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
-        if (StrUtil.isNotBlank(originalLink)) {
-            shortLinkLocalCache.put(fullShortUrl, originalLink);
-            shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
-            ((HttpServletResponse) response).sendRedirect(originalLink);
+            ((HttpServletResponse) response).sendRedirect(cachedUrl);
             return;
         }
         // 布隆过滤器判断 如果不存在则一定不存在
@@ -419,12 +401,11 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         RLock lock = redissonClient.getLock(String.format(LOCK_GOTO_SHORT_LINK_KEY, fullShortUrl));
         lock.lock();
         try {
-            // 主缓存double check
-            originalLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
-            if (StrUtil.isNotBlank(originalLink)) {
-                shortLinkLocalCache.put(fullShortUrl, originalLink);
+            // 多级缓存 double check
+            String doubleCheckUrl = shortLinkCacheManager.get(fullShortUrl);
+            if (doubleCheckUrl != null) {
                 shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
-                ((HttpServletResponse) response).sendRedirect(originalLink);
+                ((HttpServletResponse) response).sendRedirect(doubleCheckUrl);
                 return;
             }
             // 空值缓存double check
@@ -459,12 +440,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 return;
             }
             //存在了 存入缓存
-            stringRedisTemplate.opsForValue().set(
-                    String.format(GOTO_SHORT_LINK_KEY, fullShortUrl),
-                    shortLinkDO.getOriginUrl(),
-                    LinkUtil.getLinkCacheValidTime(shortLinkDO.getValidDate()), TimeUnit.MILLISECONDS
-            );
-            shortLinkLocalCache.put(fullShortUrl, shortLinkDO.getOriginUrl());
+            shortLinkCacheManager.put(fullShortUrl, shortLinkDO.getOriginUrl(), shortLinkDO.getValidDate());
             shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
             ((HttpServletResponse) response).sendRedirect(shortLinkDO.getOriginUrl());
         } finally {

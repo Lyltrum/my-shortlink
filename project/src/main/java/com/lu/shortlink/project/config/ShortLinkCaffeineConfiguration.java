@@ -19,6 +19,8 @@ package com.lu.shortlink.project.config;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
+import com.lu.shortlink.project.cache.ShortLinkCacheEntry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -26,19 +28,42 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * 短链接本地缓存（L1）配置
+ * 使用逐条 TTL（expireAfter），确保有过期时间的短链接不会在 L1 中超期驻留
  */
 @Configuration
 public class ShortLinkCaffeineConfiguration {
 
-    /**
-     * 短链接跳转 L1 本地缓存：fullShortUrl → originUrl
-     * 容量 10000，写后 1 分钟过期
-     */
+    private static final long MAX_TTL_NANOS = TimeUnit.MINUTES.toNanos(1);
+
     @Bean
-    public Cache<String, String> shortLinkLocalCache() {
+    public Cache<String, ShortLinkCacheEntry> shortLinkLocalCache() {
         return Caffeine.newBuilder()
                 .maximumSize(10_000)
-                .expireAfterWrite(1, TimeUnit.MINUTES)
+                .expireAfter(new Expiry<String, ShortLinkCacheEntry>() {
+                    @Override
+                    public long expireAfterCreate(String key, ShortLinkCacheEntry value, long currentTime) {
+                        return ttlNanos(value);
+                    }
+
+                    @Override
+                    public long expireAfterUpdate(String key, ShortLinkCacheEntry value, long currentTime, long currentDuration) {
+                        return ttlNanos(value);
+                    }
+
+                    @Override
+                    public long expireAfterRead(String key, ShortLinkCacheEntry value, long currentTime, long currentDuration) {
+                        return currentDuration;
+                    }
+
+                    private long ttlNanos(ShortLinkCacheEntry entry) {
+                        if (entry.expireAtMs() <= 0) {
+                            return MAX_TTL_NANOS;
+                        }
+                        long remainingMs = entry.expireAtMs() - System.currentTimeMillis();
+                        if (remainingMs <= 0) return 0L;
+                        return Math.min(MAX_TTL_NANOS, TimeUnit.MILLISECONDS.toNanos(remainingMs));
+                    }
+                })
                 .build();
     }
 }
