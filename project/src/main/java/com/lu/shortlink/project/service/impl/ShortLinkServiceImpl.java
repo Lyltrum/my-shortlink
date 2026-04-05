@@ -22,7 +22,6 @@ import cn.hutool.core.lang.UUID;
 import cn.hutool.core.text.StrBuilder;
 import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
-import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -37,7 +36,7 @@ import com.lu.shortlink.project.dao.entity.ShortLinkDO;
 import com.lu.shortlink.project.dao.entity.ShortLinkGotoDO;
 import com.lu.shortlink.project.dao.mapper.ShortLinkGotoMapper;
 import com.lu.shortlink.project.dao.mapper.ShortLinkMapper;
-import com.lu.shortlink.project.dto.biz.ShortLinkStatsRecordDTO;
+import com.lu.shortlink.project.dto.biz.RawStatsSnapshot;
 import com.lu.shortlink.project.dto.req.ShortLinkBatchCreateReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkPageReqDTO;
@@ -78,21 +77,17 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.GOTO_IS_NULL_SHORT_LINK_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.LOCK_GID_UPDATE_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.LOCK_GOTO_SHORT_LINK_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_CREATE_LOCK_KEY;
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_UIP_KEY;
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_UV_KEY;
 
 /**
  * 短链接接口实现层
@@ -379,7 +374,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
 // L1 → L2 多级缓存命中
         String cachedUrl = shortLinkCacheManager.get(fullShortUrl);
         if (cachedUrl != null) {
-            shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
+            shortLinkStats(buildRawStatsSnapshot(fullShortUrl, request, response));
             ((HttpServletResponse) response).sendRedirect(cachedUrl);
             return;
         }
@@ -404,7 +399,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             // 多级缓存 double check
             String doubleCheckUrl = shortLinkCacheManager.get(fullShortUrl);
             if (doubleCheckUrl != null) {
-                shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
+                shortLinkStats(buildRawStatsSnapshot(fullShortUrl, request, response));
                 ((HttpServletResponse) response).sendRedirect(doubleCheckUrl);
                 return;
             }
@@ -441,69 +436,49 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
             }
             //存在了 存入缓存
             shortLinkCacheManager.put(fullShortUrl, shortLinkDO.getOriginUrl(), shortLinkDO.getValidDate());
-            shortLinkStats(buildLinkStatsRecordAndSetUser(fullShortUrl, request, response));
+            shortLinkStats(buildRawStatsSnapshot(fullShortUrl, request, response));
             ((HttpServletResponse) response).sendRedirect(shortLinkDO.getOriginUrl());
         } finally {
             lock.unlock();
         }
     }
 
-    private ShortLinkStatsRecordDTO buildLinkStatsRecordAndSetUser(String fullShortUrl, ServletRequest request, ServletResponse response) {
-        //获取请求里的所有cookie
-        AtomicBoolean uvFirstFlag = new AtomicBoolean();
+    /**
+     * 提取跳转请求的原始快照。
+     * 主线程保留的操作：Cookie 读写（必须在 sendRedirect 前）+ IP/UA 原始值读取。
+     * 移出主线程的操作：Redis SADD UV/UIP、UA 字符串解析（移至 flush 线程批量处理）。
+     */
+    private RawStatsSnapshot buildRawStatsSnapshot(String fullShortUrl, ServletRequest request, ServletResponse response) {
         Cookie[] cookies = ((HttpServletRequest) request).getCookies();
         AtomicReference<String> uv = new AtomicReference<>();
         Runnable addResponseCookieTask = () -> {
-            //生成uv
             uv.set(UUID.fastUUID().toString());
             Cookie uvCookie = new Cookie("uv", uv.get());
             uvCookie.setMaxAge(60 * 60 * 24 * 30);
             uvCookie.setPath(StrUtil.sub(fullShortUrl, fullShortUrl.indexOf("/"), fullShortUrl.length()));
             ((HttpServletResponse) response).addCookie(uvCookie);
-            uvFirstFlag.set(Boolean.TRUE);
-            stringRedisTemplate.opsForSet().add(SHORT_LINK_STATS_UV_KEY + fullShortUrl, uv.get());
         };
-        
         if (ArrayUtil.isNotEmpty(cookies)) {
             Arrays.stream(cookies)
                     .filter(each -> Objects.equals(each.getName(), "uv"))
                     .findFirst()
                     .map(Cookie::getValue)
-                    .ifPresentOrElse(each -> {
-                        uv.set(each);
-                        Long uvAdded = stringRedisTemplate.opsForSet().add(SHORT_LINK_STATS_UV_KEY + fullShortUrl, each);
-                        uvFirstFlag.set(uvAdded != null && uvAdded > 0L);
-                    }, addResponseCookieTask);
+                    .ifPresentOrElse(uv::set, addResponseCookieTask);
         } else {
             addResponseCookieTask.run();
         }
-        String remoteAddr = LinkUtil.getActualIp(((HttpServletRequest) request));
-        String os = LinkUtil.getOs(((HttpServletRequest) request));
-        String browser = LinkUtil.getBrowser(((HttpServletRequest) request));
-        String device = LinkUtil.getDevice(((HttpServletRequest) request));
-        String network = LinkUtil.getNetwork(((HttpServletRequest) request));
-        Long uipAdded = stringRedisTemplate.opsForSet().add(SHORT_LINK_STATS_UIP_KEY + fullShortUrl, remoteAddr);
-        boolean uipFirstFlag = uipAdded != null && uipAdded > 0L;
-        return ShortLinkStatsRecordDTO.builder()
+        return RawStatsSnapshot.builder()
                 .fullShortUrl(fullShortUrl)
                 .uv(uv.get())
-                .uvFirstFlag(uvFirstFlag.get())
-                .uipFirstFlag(uipFirstFlag)
-                .remoteAddr(remoteAddr)
-                .os(os)
-                .browser(browser)
-                .device(device)
-                .network(network)
+                .remoteAddr(LinkUtil.getActualIp((HttpServletRequest) request))
+                .userAgent(((HttpServletRequest) request).getHeader("User-Agent"))
                 .currentDate(new Date())
                 .build();
     }
 
     @Override
-    public void shortLinkStats(ShortLinkStatsRecordDTO statsRecord) {
-        Map<String, String> producerMap = new HashMap<>();
-        producerMap.put("statsRecord", JSON.toJSONString(statsRecord));
-        // 消息队列为什么选用RocketMQ？
-        shortLinkStatsSaveProducer.send(producerMap);
+    public void shortLinkStats(RawStatsSnapshot snapshot) {
+        shortLinkStatsSaveProducer.send(snapshot);
     }
 
     private String generateSuffix(ShortLinkCreateReqDTO requestParam) {

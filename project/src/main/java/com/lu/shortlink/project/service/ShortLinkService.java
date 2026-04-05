@@ -20,7 +20,7 @@ package com.lu.shortlink.project.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.lu.shortlink.project.dao.entity.ShortLinkDO;
-import com.lu.shortlink.project.dto.biz.ShortLinkStatsRecordDTO;
+import com.lu.shortlink.project.dto.biz.RawStatsSnapshot;
 import com.lu.shortlink.project.dto.req.ShortLinkBatchCreateReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkPageReqDTO;
@@ -98,7 +98,7 @@ public interface ShortLinkService extends IService<ShortLinkDO> {
     /**
      * 短链接统计
      *
-     * @param shortLinkStatsRecord 短链接统计实体参数
+     * @param snapshot 短链接跳转原始快照
      */
-    void shortLinkStats(ShortLinkStatsRecordDTO shortLinkStatsRecord);
+    void shortLinkStats(RawStatsSnapshot snapshot);
 }

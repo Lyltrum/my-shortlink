@@ -21,6 +21,7 @@ import cn.hutool.core.util.StrUtil;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.lu.shortlink.project.toolkit.LinkUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -42,6 +43,9 @@ import static com.lu.shortlink.project.common.constant.RedisKeyConstant.GOTO_SHO
 @RequiredArgsConstructor
 public class ShortLinkCacheManager {
 
+    @Value("${short-link.cache.l1-enabled:true}")
+    private boolean l1Enabled;
+
     private final Cache<String, ShortLinkCacheEntry> shortLinkLocalCache;
     private final StringRedisTemplate stringRedisTemplate;
 
@@ -52,16 +56,18 @@ public class ShortLinkCacheManager {
      * @return originUrl，两级均未命中返回 null
      */
     public String get(String fullShortUrl) {
-        ShortLinkCacheEntry local = shortLinkLocalCache.getIfPresent(fullShortUrl);
-        if (local != null) {
-            if (local.isBusinessExpired()) {
-                shortLinkLocalCache.invalidate(fullShortUrl);
-                return null;
+        if (l1Enabled) {
+            ShortLinkCacheEntry local = shortLinkLocalCache.getIfPresent(fullShortUrl);
+            if (local != null) {
+                if (local.isBusinessExpired()) {
+                    shortLinkLocalCache.invalidate(fullShortUrl);
+                    return null;
+                }
+                return local.originUrl();
             }
-            return local.originUrl();
         }
         String redisUrl = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
-        if (StrUtil.isNotBlank(redisUrl)) {
+        if (l1Enabled && StrUtil.isNotBlank(redisUrl)) {
             // 回填 L1：此处无法获取原始 validDate，使用永久条目（Caffeine 默认 1min TTL）
             shortLinkLocalCache.put(fullShortUrl, ShortLinkCacheEntry.permanent(redisUrl));
         }
@@ -82,14 +88,18 @@ public class ShortLinkCacheManager {
                 LinkUtil.getLinkCacheValidTime(validDate), TimeUnit.MILLISECONDS
         );
         // 写 L1
-        putLocal(fullShortUrl, originUrl, validDate);
+        if (l1Enabled) {
+            putLocal(fullShortUrl, originUrl, validDate);
+        }
     }
 
     /**
      * 仅更新 L1（L2 已有值，不需要重复写入时使用）。
      */
     public void putLocalOnly(String fullShortUrl, String originUrl, Date validDate) {
-        putLocal(fullShortUrl, originUrl, validDate);
+        if (l1Enabled) {
+            putLocal(fullShortUrl, originUrl, validDate);
+        }
     }
 
     /**

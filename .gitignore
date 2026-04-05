@@ -31,6 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+.claude/
 
 ### Mac OS ###
 .DS_Store
@@ -44,6 +45,9 @@ skywalking-agent/
 
 ### Logs ###
 logs/
+
+### Benchmark Reports ###
+report/
 
 ### JWT Keys ###
 admin/src/main/resources/keys/private.pem

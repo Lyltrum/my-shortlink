@@ -20,6 +20,7 @@ package com.lu.shortlink.project.config;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
+import com.lu.shortlink.project.cache.ParsedUA;
 import com.lu.shortlink.project.cache.ShortLinkCacheEntry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -64,6 +65,14 @@ public class ShortLinkCaffeineConfiguration {
                         return Math.min(MAX_TTL_NANOS, TimeUnit.MILLISECONDS.toNanos(remainingMs));
                     }
                 })
+                .build();
+    }
+
+    @Bean
+    public Cache<String, ParsedUA> uaParsingCache() {
+        return Caffeine.newBuilder()
+                .maximumSize(500)
+                .expireAfterAccess(1, TimeUnit.HOURS)
                 .build();
     }
 }
