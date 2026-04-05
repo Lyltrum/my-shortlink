@@ -123,6 +123,11 @@ public class GroupServiceImpl extends ServiceImpl<GroupMapper, GroupDO> implemen
         Result<List<ShortLinkGroupCountQueryRespDTO>> listResult = shortLinkActualRemoteService
                 .listGroupShortLinkCount(groupDOList.stream().map(GroupDO::getGid).toList());
         List<ShortLinkGroupRespDTO> shortLinkGroupRespDTOList = BeanUtil.copyToList(groupDOList, ShortLinkGroupRespDTO.class);
+        if (!listResult.isSuccess() || CollUtil.isEmpty(listResult.getData())) {
+            log.warn("Failed to query short link counts from project service, fallback to zero counts. code={}, message={}",
+                    listResult.getCode(), listResult.getMessage());
+            return shortLinkGroupRespDTOList;
+        }
         shortLinkGroupRespDTOList.forEach(each -> {
             Optional<ShortLinkGroupCountQueryRespDTO> first = listResult.getData().stream()
                     .filter(item -> Objects.equals(item.getGid(), each.getGid()))

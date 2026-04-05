@@ -18,6 +18,15 @@ spring:
           min-idle: 1
           time-between-eviction-runs: 10s
   cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 2000
+        response-timeout: 5s
+    circuitbreaker:
+      sentinel:
+        enabled: false
+      resilience4j:
+        enabled: true
     nacos:
       discovery:
         server-addr: 127.0.0.1:18848
@@ -29,3 +38,21 @@ spring:
 short-link:
   jwt:
     public-key-path: classpath:keys/public.pem
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      short-link-admin-cb:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 2
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+      short-link-project-cb:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 2
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s

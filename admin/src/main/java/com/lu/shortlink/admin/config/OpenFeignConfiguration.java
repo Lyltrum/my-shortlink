@@ -17,10 +17,19 @@
 
 package com.lu.shortlink.admin.config;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.lu.shortlink.admin.common.biz.user.UserContext;
+import com.lu.shortlink.admin.common.convention.exception.RemoteException;
 import feign.RequestInterceptor;
+import feign.Response;
+import feign.codec.ErrorDecoder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * openFeign 微服务调用传递用户信息配置
@@ -28,14 +37,39 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OpenFeignConfiguration {
 
-
-    //请求拦截器  http请求头中加入用户信息
+    // 请求拦截器：http 请求头中加入用户信息
     @Bean
     public RequestInterceptor requestInterceptor() {
         return template -> {
             template.header("username", UserContext.getUsername());
             template.header("userId", UserContext.getUserId());
-            template.header("realName", UserContext.getRealName());
         };
+    }
+
+    /**
+     * 自定义错误解码器：将 project 服务返回的 Result 错误体转换为 RemoteException，
+     * 保留 errorCode 和 errorMessage，避免信息丢失。
+     */
+    @Bean
+    public ErrorDecoder errorDecoder() {
+        return (methodKey, response) -> {
+            String errorMessage = extractMessage(response);
+            return new RemoteException(StringUtils.hasLength(errorMessage) ? errorMessage : "远程服务调用失败");
+        };
+    }
+
+    private String extractMessage(Response response) {
+        try (Response.Body body = response.body()) {
+            if (body == null) {
+                return null;
+            }
+            String bodyStr = new String(body.asInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            JSONObject json = JSON.parseObject(bodyStr);
+            if (json != null && json.containsKey("message")) {
+                return json.getString("message");
+            }
+        } catch (IOException ignored) {
+        }
+        return null;
     }
 }

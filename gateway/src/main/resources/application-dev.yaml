@@ -14,6 +14,10 @@ spring:
                   - /api/short-link/admin/v1/user/has-username
                   - /api/short-link/admin/v1/user/refresh
                   - /api/short-link/admin/v1/user
+            - name: CircuitBreaker
+              args:
+                name: short-link-admin-cb
+                fallbackUri: forward:/fallback/admin
 
         - id: short-link-project
           uri: lb://short-link-project/api/short-link/**
@@ -21,6 +25,10 @@ spring:
             - Path=/api/short-link/**
           filters:
             - name: TokenValidate
+            - name: CircuitBreaker
+              args:
+                name: short-link-project-cb
+                fallbackUri: forward:/fallback/project
 
         - id: short-link-redirect
           uri: lb://short-link-project

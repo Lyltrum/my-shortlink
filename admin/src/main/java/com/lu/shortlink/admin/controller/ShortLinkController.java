@@ -18,8 +18,8 @@
 package com.lu.shortlink.admin.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lu.shortlink.admin.common.convention.exception.RemoteException;
 import com.lu.shortlink.admin.common.convention.result.Result;
-import com.lu.shortlink.admin.common.convention.result.Results;
 import com.lu.shortlink.admin.remote.ShortLinkActualRemoteService;
 import com.lu.shortlink.admin.remote.dto.req.ShortLinkBatchCreateReqDTO;
 import com.lu.shortlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
@@ -64,6 +64,9 @@ public class ShortLinkController {
     @PostMapping("/api/short-link/admin/v1/create/batch")
     public void batchCreateShortLink(@RequestBody ShortLinkBatchCreateReqDTO requestParam, HttpServletResponse response) {
         Result<ShortLinkBatchCreateRespDTO> shortLinkBatchCreateRespDTOResult = shortLinkActualRemoteService.batchCreateShortLink(requestParam);
+        if (!shortLinkBatchCreateRespDTOResult.isSuccess()) {
+            throw new RemoteException(shortLinkBatchCreateRespDTOResult.getMessage());
+        }
         if (shortLinkBatchCreateRespDTOResult.isSuccess()) {
             List<ShortLinkBaseInfoRespDTO> baseLinkInfos = shortLinkBatchCreateRespDTOResult.getData().getBaseLinkInfos();
             EasyExcelWebUtil.write(response, "批量创建短链接-SaaS短链接系统", ShortLinkBaseInfoRespDTO.class, baseLinkInfos);
@@ -75,8 +78,7 @@ public class ShortLinkController {
      */
     @PostMapping("/api/short-link/admin/v1/update")
     public Result<Void> updateShortLink(@RequestBody ShortLinkUpdateReqDTO requestParam) {
-        shortLinkActualRemoteService.updateShortLink(requestParam);
-        return Results.success();
+        return shortLinkActualRemoteService.updateShortLink(requestParam);
     }
 
     /**

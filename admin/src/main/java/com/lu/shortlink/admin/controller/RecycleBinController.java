@@ -19,7 +19,6 @@ package com.lu.shortlink.admin.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lu.shortlink.admin.common.convention.result.Result;
-import com.lu.shortlink.admin.common.convention.result.Results;
 import com.lu.shortlink.admin.dto.req.RecycleBinRecoverReqDTO;
 import com.lu.shortlink.admin.dto.req.RecycleBinRemoveReqDTO;
 import com.lu.shortlink.admin.dto.req.RecycleBinSaveReqDTO;
@@ -48,8 +47,7 @@ public class RecycleBinController {
      */
     @PostMapping("/api/short-link/admin/v1/recycle-bin/save")
     public Result<Void> saveRecycleBin(@RequestBody RecycleBinSaveReqDTO requestParam) {
-        shortLinkActualRemoteService.saveRecycleBin(requestParam);
-        return Results.success();
+        return shortLinkActualRemoteService.saveRecycleBin(requestParam);
     }
 
     /**
@@ -65,8 +63,7 @@ public class RecycleBinController {
      */
     @PostMapping("/api/short-link/admin/v1/recycle-bin/recover")
     public Result<Void> recoverRecycleBin(@RequestBody RecycleBinRecoverReqDTO requestParam) {
-        shortLinkActualRemoteService.recoverRecycleBin(requestParam);
-        return Results.success();
+        return shortLinkActualRemoteService.recoverRecycleBin(requestParam);
     }
 
     /**
@@ -74,7 +71,6 @@ public class RecycleBinController {
      */
     @PostMapping("/api/short-link/admin/v1/recycle-bin/remove")
     public Result<Void> removeRecycleBin(@RequestBody RecycleBinRemoveReqDTO requestParam) {
-        shortLinkActualRemoteService.removeRecycleBin(requestParam);
-        return Results.success();
+        return shortLinkActualRemoteService.removeRecycleBin(requestParam);
     }
 }

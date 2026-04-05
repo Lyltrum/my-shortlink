@@ -19,6 +19,14 @@ spring:
           min-idle: 1
           time-between-eviction-runs: 10s
   cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          short-link-project:
+            connectTimeout: 2000
+            readTimeout: 5000
     nacos:
       discovery:
         server-addr: 127.0.0.1:18848

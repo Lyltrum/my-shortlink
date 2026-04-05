@@ -34,10 +34,11 @@ build/
 
 ### Mac OS ###
 .DS_Store
-Claude.md
+CLAUDE.md
 docker
 docker-compose.yml
 OPTIMIZATION.md
+OPTIMIZATION/
 JWT_IMPLEMENTATION.md
 skywalking-agent/
 

@@ -32,6 +32,7 @@ import com.lu.shortlink.admin.remote.dto.resp.ShortLinkGroupCountQueryRespDTO;
 import com.lu.shortlink.admin.remote.dto.resp.ShortLinkPageRespDTO;
 import com.lu.shortlink.admin.remote.dto.resp.ShortLinkStatsAccessRecordRespDTO;
 import com.lu.shortlink.admin.remote.dto.resp.ShortLinkStatsRespDTO;
+import com.lu.shortlink.admin.remote.fallback.ShortLinkRemoteServiceFallbackFactory;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,7 +47,8 @@ import java.util.List;
 @FeignClient(
         value = "short-link-project",
         url = "${aggregation.remote-url:}",
-        configuration = OpenFeignConfiguration.class
+        configuration = OpenFeignConfiguration.class,
+        fallbackFactory = ShortLinkRemoteServiceFallbackFactory.class
 )
 public interface ShortLinkActualRemoteService {
 
@@ -74,7 +76,7 @@ public interface ShortLinkActualRemoteService {
      * @param requestParam 修改短链接请求参数
      */
     @PostMapping("/api/short-link/v1/update")
-    void updateShortLink(@RequestBody ShortLinkUpdateReqDTO requestParam);
+    Result<Void> updateShortLink(@RequestBody ShortLinkUpdateReqDTO requestParam);
 
     /**
      * 分页查询短链接
@@ -115,7 +117,7 @@ public interface ShortLinkActualRemoteService {
      * @param requestParam 请求参数
      */
     @PostMapping("/api/short-link/v1/recycle-bin/save")
-    void saveRecycleBin(@RequestBody RecycleBinSaveReqDTO requestParam);
+    Result<Void> saveRecycleBin(@RequestBody RecycleBinSaveReqDTO requestParam);
 
     /**
      * 分页查询回收站短链接
@@ -136,7 +138,7 @@ public interface ShortLinkActualRemoteService {
      * @param requestParam 短链接恢复请求参数
      */
     @PostMapping("/api/short-link/v1/recycle-bin/recover")
-    void recoverRecycleBin(@RequestBody RecycleBinRecoverReqDTO requestParam);
+    Result<Void> recoverRecycleBin(@RequestBody RecycleBinRecoverReqDTO requestParam);
 
     /**
      * 移除短链接
@@ -144,7 +146,7 @@ public interface ShortLinkActualRemoteService {
      * @param requestParam 短链接移除请求参数
      */
     @PostMapping("/api/short-link/v1/recycle-bin/remove")
-    void removeRecycleBin(@RequestBody RecycleBinRemoveReqDTO requestParam);
+    Result<Void> removeRecycleBin(@RequestBody RecycleBinRemoveReqDTO requestParam);
 
 
     /**
