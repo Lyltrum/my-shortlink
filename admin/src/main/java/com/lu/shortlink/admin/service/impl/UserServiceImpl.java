@@ -34,7 +34,9 @@ import com.lu.shortlink.admin.dto.resp.UserLoginRespDTO;
 import com.lu.shortlink.admin.dto.resp.UserRespDTO;
 import com.lu.shortlink.admin.service.GroupService;
 import com.lu.shortlink.admin.service.JwtTokenService;
+import com.lu.shortlink.admin.service.TokenVersionService;
 import com.lu.shortlink.admin.service.UserService;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
@@ -62,6 +64,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
     private final RedissonClient redissonClient;
     private final GroupService groupService;
     private final JwtTokenService jwtTokenService;
+    private final TokenVersionService tokenVersionService;
 
     @Override
     public UserRespDTO getUserByUsername(String username) {
@@ -127,8 +130,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
         }
         Long userId = userDO.getId();
         String username = userDO.getUsername();
-        String accessToken = jwtTokenService.generateAccessToken(userId.toString(), username);
-        String refreshToken = jwtTokenService.generateRefreshToken(userId.toString(), username);
+        long tokenVersion = tokenVersionService.getTokenVersion(userId.toString());
+        String accessToken = jwtTokenService.generateAccessToken(userId.toString(), username, tokenVersion);
+        String refreshToken = jwtTokenService.generateRefreshToken(userId.toString(), username, tokenVersion);
         long expiresIn = jwtTokenService.getAccessTokenTtl();
         return UserLoginRespDTO.builder()
                 .accessToken(accessToken)
@@ -139,15 +143,21 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
 
     @Override
     public UserLoginRespDTO refreshAccessToken(String refreshToken) {
+        Claims refreshTokenClaims;
         try {
-            jwtTokenService.parseRefreshToken(refreshToken);
+            refreshTokenClaims = jwtTokenService.parseRefreshToken(refreshToken);
         } catch (Exception e) {
             throw new ClientException("Refresh Token 已过期或无效");
         }
-        String userId = jwtTokenService.parseRefreshToken(refreshToken).getSubject();
-        String username = jwtTokenService.parseRefreshToken(refreshToken).get("username", String.class);
-        String newAccessToken = jwtTokenService.generateAccessToken(userId, username);
-        String newRefreshToken = jwtTokenService.generateRefreshToken(userId, username);
+        String userId = refreshTokenClaims.getSubject();
+        String username = refreshTokenClaims.get("username", String.class);
+        Number tokenVersionInToken = refreshTokenClaims.get("tokenVersion", Number.class);
+        long tokenVersion = tokenVersionService.getTokenVersion(userId);
+        if (tokenVersionInToken == null || tokenVersionInToken.longValue() != tokenVersion) {
+            throw new ClientException("Refresh Token 已失效，请重新登录");
+        }
+        String newAccessToken = jwtTokenService.generateAccessToken(userId, username, tokenVersion);
+        String newRefreshToken = jwtTokenService.generateRefreshToken(userId, username, tokenVersion);
         long expiresIn = jwtTokenService.getAccessTokenTtl();
         return UserLoginRespDTO.builder()
                 .accessToken(newAccessToken)
@@ -159,7 +169,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
     @Override
     public Boolean checkLogin(String accessToken) {
         try {
-            return jwtTokenService.validateToken(accessToken);
+            Claims accessTokenClaims = jwtTokenService.parseAccessToken(accessToken);
+            Number tokenVersionInToken = accessTokenClaims.get("tokenVersion", Number.class);
+            long tokenVersion = tokenVersionService.getTokenVersion(accessTokenClaims.getSubject());
+            return tokenVersionInToken != null && tokenVersionInToken.longValue() == tokenVersion;
         } catch (Exception e) {
             return false;
         }
@@ -167,6 +180,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
 
     @Override
     public void logout(String accessToken) {
-        // JWT 无状态，服务端无需存储黑名单，客户端自行丢弃 Token 即可
+        try {
+            Claims accessTokenClaims = jwtTokenService.parseAccessToken(accessToken);
+            tokenVersionService.revokeAllTokens(accessTokenClaims.getSubject());
+        } catch (Exception e) {
+            throw new ClientException("Access Token 无效，无法退出");
+        }
     }
 }

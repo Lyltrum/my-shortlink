@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.core.io.buffer.DataBufferFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -38,17 +39,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * SpringCloud Gateway JWT Token 验证过滤器
+ * SpringCloud Gateway JWT Token 校验过滤器
  */
 @Slf4j
 @Component
 public class TokenValidateGatewayFilterFactory extends AbstractGatewayFilterFactory<Config> {
 
-    private final JwtConfig jwtConfig;
+    private static final String USER_TOKEN_VERSION_KEY = "short-link:token-version:%s";
 
-    public TokenValidateGatewayFilterFactory(JwtConfig jwtConfig) {
+    private final JwtConfig jwtConfig;
+    private final StringRedisTemplate stringRedisTemplate;
+
+    public TokenValidateGatewayFilterFactory(JwtConfig jwtConfig, StringRedisTemplate stringRedisTemplate) {
         super(Config.class);
         this.jwtConfig = jwtConfig;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     @Override
@@ -56,22 +61,23 @@ public class TokenValidateGatewayFilterFactory extends AbstractGatewayFilterFact
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
             String requestPath = request.getPath().toString();
-            // 如果在白名单中则跳过 JWT 校验
             if (isPathInWhiteList(requestPath, config.getWhitePathList())) {
                 return chain.filter(exchange);
             }
-            // 从 Authorization: Bearer <token> 头部获取 JWT
             String authHeader = request.getHeaders().getFirst("Authorization");
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 return writeError(exchange, "Missing or invalid Authorization header");
             }
             String token = authHeader.substring(7);
             try {
-                // 验签并解析 Access Token
                 Claims claims = jwtConfig.parseAccessToken(token);
                 String userId = claims.getSubject();
                 String username = claims.get("username", String.class);
-                // 将用户信息注入下游 Header（与原有逻辑保持兼容）
+                Number tokenVersionInToken = claims.get("tokenVersion", Number.class);
+                long tokenVersionInStore = getTokenVersion(userId);
+                if (tokenVersionInToken == null || tokenVersionInToken.longValue() != tokenVersionInStore) {
+                    return writeError(exchange, "Token has been revoked");
+                }
                 ServerHttpRequest mutatedRequest = request.mutate()
                         .headers(httpHeaders -> {
                             httpHeaders.set("userId", userId);
@@ -80,10 +86,22 @@ public class TokenValidateGatewayFilterFactory extends AbstractGatewayFilterFact
                         .build();
                 return chain.filter(exchange.mutate().request(mutatedRequest).build());
             } catch (Exception e) {
-                log.warn("JWT 验签失败 [{}]: {}", requestPath, e.getMessage());
+                log.warn("JWT verify failed [{}]: {}", requestPath, e.getMessage());
                 return writeError(exchange, "Invalid or expired token");
             }
         };
+    }
+
+    private long getTokenVersion(String userId) {
+        String value = stringRedisTemplate.opsForValue().get(String.format(USER_TOKEN_VERSION_KEY, userId));
+        if (value == null) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ex) {
+            return 0L;
+        }
     }
 
     private boolean isPathInWhiteList(String requestPath, List<String> whitePathList) {

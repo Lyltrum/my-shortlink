@@ -24,10 +24,8 @@ import com.lu.shortlink.admin.dto.req.RecycleBinRecoverReqDTO;
 import com.lu.shortlink.admin.dto.req.RecycleBinRemoveReqDTO;
 import com.lu.shortlink.admin.dto.req.RecycleBinSaveReqDTO;
 import com.lu.shortlink.admin.remote.ShortLinkActualRemoteService;
-import com.lu.shortlink.admin.remote.dto.req.ShortLinkBatchCreateReqDTO;
 import com.lu.shortlink.admin.remote.dto.req.ShortLinkCreateReqDTO;
 import com.lu.shortlink.admin.remote.dto.req.ShortLinkUpdateReqDTO;
-import com.lu.shortlink.admin.remote.dto.resp.ShortLinkBatchCreateRespDTO;
 import com.lu.shortlink.admin.remote.dto.resp.ShortLinkCreateRespDTO;
 import com.lu.shortlink.admin.remote.dto.resp.ShortLinkGroupCountQueryRespDTO;
 import com.lu.shortlink.admin.remote.dto.resp.ShortLinkPageRespDTO;
@@ -40,13 +38,13 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Project 服务降级工厂，统一返回远程服务不可用结果。
+ * Fallback factory for project service.
  */
 @Slf4j
 @Component
 public class ShortLinkRemoteServiceFallbackFactory implements FallbackFactory<ShortLinkActualRemoteService> {
 
-    static final String PROJECT_UNAVAILABLE_MESSAGE = "短链接服务暂时不可用，请稍后重试";
+    static final String PROJECT_UNAVAILABLE_MESSAGE = "Short link service is temporarily unavailable, please try again later";
 
     @Override
     public ShortLinkActualRemoteService create(Throwable cause) {
@@ -54,11 +52,6 @@ public class ShortLinkRemoteServiceFallbackFactory implements FallbackFactory<Sh
         return new ShortLinkActualRemoteService() {
             @Override
             public Result<ShortLinkCreateRespDTO> createShortLink(ShortLinkCreateReqDTO requestParam) {
-                return failure();
-            }
-
-            @Override
-            public Result<ShortLinkBatchCreateRespDTO> batchCreateShortLink(ShortLinkBatchCreateReqDTO requestParam) {
                 return failure();
             }
 
@@ -131,3 +124,4 @@ public class ShortLinkRemoteServiceFallbackFactory implements FallbackFactory<Sh
         return result;
     }
 }
+

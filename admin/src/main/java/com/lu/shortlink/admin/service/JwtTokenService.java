@@ -63,12 +63,12 @@ public class JwtTokenService {
         }
     }
 
-    public String generateAccessToken(String userId, String username) {
-        return JwtUtil.generateAccessToken(privateKey, userId, username, jwtProperties.getAccessTokenTtl() * 1000L);
+    public String generateAccessToken(String userId, String username, long tokenVersion) {
+        return JwtUtil.generateAccessToken(privateKey, userId, username, tokenVersion, jwtProperties.getAccessTokenTtl() * 1000L);
     }
 
-    public String generateRefreshToken(String userId, String username) {
-        return JwtUtil.generateRefreshToken(privateKey, userId, username, jwtProperties.getRefreshTokenTtl() * 1000L);
+    public String generateRefreshToken(String userId, String username, long tokenVersion) {
+        return JwtUtil.generateRefreshToken(privateKey, userId, username, tokenVersion, jwtProperties.getRefreshTokenTtl() * 1000L);
     }
 
     public Claims parseAccessToken(String token) {

@@ -21,11 +21,9 @@ import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lu.shortlink.project.common.convention.result.Result;
 import com.lu.shortlink.project.common.convention.result.Results;
-import com.lu.shortlink.project.dto.req.ShortLinkBatchCreateReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkPageReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkUpdateReqDTO;
-import com.lu.shortlink.project.dto.resp.ShortLinkBatchCreateRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkCreateRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkGroupCountQueryRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkPageRespDTO;
@@ -84,11 +82,6 @@ public class ShortLinkController {
     /**
      * 批量创建短链接
      */
-    @PostMapping("/api/short-link/v1/create/batch")
-    public Result<ShortLinkBatchCreateRespDTO> batchCreateShortLink(@RequestBody ShortLinkBatchCreateReqDTO requestParam) {
-        return Results.success(shortLinkService.batchCreateShortLink(requestParam));
-    }
-
     /**
      * 修改短链接
      */

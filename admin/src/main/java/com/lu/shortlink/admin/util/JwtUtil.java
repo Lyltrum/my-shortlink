@@ -36,14 +36,15 @@ public class JwtUtil {
     private JwtUtil() {
     }
 
-    public static String generateAccessToken(PrivateKey privateKey, String userId, String username, long expirationMs) {
+    public static String generateAccessToken(PrivateKey privateKey, String userId, String username, long tokenVersion, long expirationMs) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
                 .subject(userId)
                 .claims(Map.of(
                         "username", username,
-                        "type", "access"
+                        "type", "access",
+                        "tokenVersion", tokenVersion
                 ))
                 .issuedAt(now)
                 .expiration(expiryDate)
@@ -51,14 +52,15 @@ public class JwtUtil {
                 .compact();
     }
 
-    public static String generateRefreshToken(PrivateKey privateKey, String userId, String username, long expirationMs) {
+    public static String generateRefreshToken(PrivateKey privateKey, String userId, String username, long tokenVersion, long expirationMs) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expirationMs);
         return Jwts.builder()
                 .subject(userId)
                 .claims(Map.of(
                         "username", username,
-                        "type", "refresh"
+                        "type", "refresh",
+                        "tokenVersion", tokenVersion
                 ))
                 .issuedAt(now)
                 .expiration(expiryDate)

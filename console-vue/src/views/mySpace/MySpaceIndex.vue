@@ -66,7 +66,6 @@
             <!-- <el-input style="flex: 1; margin-right: 20px" placeholder="请输入http://或https://开头的连接或引用跳转程序"></el-input> -->
             <el-button class="addButton" type="primary" style="width: 130px; margin-right: 10px"
               @click="isAddSmallLink = true">创建短链</el-button>
-            <el-button style="width: 130px; margin-right: 10px" @click="isAddSmallLinks = true">批量创建</el-button>
           </div>
         </div>
         <!-- 展示回收站信息 -->
@@ -362,11 +361,6 @@
       <EditLink ref="editLinkRef" :editData="editData" :groupInfo="editableTabs" @onSubmit="coverEditLink"
         @updatePage="updatePage" @cancel="coverEditLink"></EditLink>
     </el-dialog>
-    <!-- 批量创建短链弹框 -->
-    <el-dialog @close="afterAddLink" v-model="isAddSmallLinks" title="批量链接">
-      <CreateLinks ref="createLink2Ref" :groupInfo="editableTabs" @onSubmit="addLink" @cancel="cancelAddLink"
-        :defaultGid="pageParams.gid"></CreateLinks>
-    </el-dialog>
   </div>
 </template>
 
@@ -376,7 +370,6 @@ import Sortable from 'sortablejs'
 import { cloneDeep } from 'lodash'
 import ChartsInfo from './components/chartsInfo/ChartsInfo.vue'
 import CreateLink from './components/createLink/CreateLink.vue'
-import CreateLinks from './components/createLink/CreateLinks.vue'
 import { getTodayFormatDate, getLastWeekFormatDate } from '@/utils/plugins.js'
 import EditLink from './components/editLink/EditLink.vue'
 import { ElMessage } from 'element-plus'
@@ -396,7 +389,6 @@ const chartsInfoTitle = ref()
 const chartsInfo = ref()
 const tableInfo = ref()
 const createLink1Ref = ref()
-const createLink2Ref = ref()
 let selectedIndex = ref(0)
 const editableTabs = ref([])
 // 添加弹窗关闭后重新请求一下页面数据
@@ -408,9 +400,6 @@ const afterAddLink = () => {
   }, 0)
   if (createLink1Ref.value) {
     createLink1Ref.value.initFormData()
-  }
-  if (createLink2Ref.value) {
-    createLink2Ref.value.initFormData()
   }
   if (editLinkRef.value) {
     editLinkRef.value.initFormData()
@@ -714,16 +703,13 @@ const editGroup = async () => {
 }
 // 创建短链
 const isAddSmallLink = ref(false)
-const isAddSmallLinks = ref(false)
 // 关闭新建短链接弹窗
 const addLink = () => {
   isAddSmallLink.value = false
-  isAddSmallLinks.value = false
 }
 // 新建批量新建短链接弹窗
 const cancelAddLink = () => {
   isAddSmallLink.value = false
-  isAddSmallLinks.value = false
 }
 const getImgUrl = (url) => {
   return url ?? defaultImg
