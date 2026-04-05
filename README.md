@@ -67,10 +67,10 @@ docker-compose up -d
 ```
 
 `docker-compose.yml` 默认包含：
-- Nacos: `18848`
-- Redis: `6379`（密码 `1234`）
-- Sentinel Dashboard: `8080`（容器 8858 映射）
-- SkyWalking UI: `8888`（可选）
+- Nacos: `XXXX`
+- Redis: `XXXX`（密码 `XXXX`）
+- Sentinel Dashboard: `XXXX`（容器 XXXX 映射）
+- SkyWalking UI: `XXXX`（可选）
 
 ### 2) 初始化数据库
 
@@ -82,8 +82,8 @@ docker-compose up -d
 > 当前 `*-dev` 分片配置默认使用：
 > - host: `127.0.0.1:3306`
 > - db: `link`
-> - user: `root`
-> - password: `lwc1.`
+> - user: `XXXX`
+> - password: `XXXX`
 
 ### 3) JWT 密钥准备
 
@@ -183,4 +183,3 @@ cd console-vue && npm run build
 
 ---
 
-如果你希望，我可以再给你补一版「面试导向 README」（突出架构亮点、容错闭环、幂等设计、可追问点与回答模板）。
