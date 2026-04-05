@@ -36,6 +36,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_CONSUMER_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
 
@@ -82,8 +83,8 @@ public class RedisStreamConfiguration {
         StreamMessageListenerContainer.StreamReadRequest<String> streamReadRequest =
                 StreamMessageListenerContainer.StreamReadRequest.builder(StreamOffset.create(SHORT_LINK_STATS_STREAM_TOPIC_KEY, ReadOffset.lastConsumed()))
                         .cancelOnError(throwable -> false)
-                        .consumer(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, "stats-consumer"))
-                        .autoAcknowledge(true)
+                        .consumer(Consumer.from(SHORT_LINK_STATS_STREAM_GROUP_KEY, SHORT_LINK_STATS_STREAM_CONSUMER_KEY))
+                        .autoAcknowledge(false)
                         .build();
         StreamMessageListenerContainer<String, MapRecord<String, String, String>> listenerContainer = 
         StreamMessageListenerContainer.create(redisConnectionFactory, options);

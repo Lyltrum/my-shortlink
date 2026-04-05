@@ -63,12 +63,16 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.LOCK_GID_UPDATE_KEY;
+import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_DEAD_LETTER_TOPIC_KEY;
+import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
+import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_RETRY_COUNT_KEY;
 import static com.lu.shortlink.project.common.constant.ShortLinkConstant.AMAP_REMOTE_URL;
 
 /**
- * 短链接监控状态保存消息队列消费者
+ * 鐭摼鎺ョ洃鎺х姸鎬佷繚瀛樻秷鎭槦鍒楁秷璐硅€?
  */
 @Slf4j
 @Component
@@ -92,29 +96,66 @@ public class ShortLinkStatsSaveConsumer implements StreamListener<String, MapRec
     @Value("${short-link.stats.locale.amap-key}")
     private String statsLocaleAmapKey;
 
+    @Value("${short-link.stats.stream.max-retry-times:5}")
+    private int maxRetryTimes;
+
+    @Value("${short-link.stats.stream.retry-key-ttl-seconds:86400}")
+    private long retryKeyTtlSeconds;
+
     @Override
     public void onMessage(MapRecord<String, String, String> message) {
         String stream = message.getStream();
         RecordId id = message.getId();
         if (messageQueueIdempotentHandler.isMessageBeingConsumed(id.toString())) {
-            // 判断当前的这个消息流程是否执行完成
             if (messageQueueIdempotentHandler.isAccomplish(id.toString())) {
                 return;
             }
-            throw new ServiceException("消息未完成流程，需要消息队列重试");
+            throw new ServiceException("short-link stats message is in progress");
         }
         try {
             Map<String, String> producerMap = message.getValue();
             ShortLinkStatsRecordDTO statsRecord = JSON.parseObject(producerMap.get("statsRecord"), ShortLinkStatsRecordDTO.class);
-            actualSaveShortLinkStats(statsRecord);  //存入数据库
-            stringRedisTemplate.opsForStream().delete(Objects.requireNonNull(stream), id.getValue());
+            actualSaveShortLinkStats(statsRecord);
+            stringRedisTemplate.opsForStream().acknowledge(Objects.requireNonNull(stream), SHORT_LINK_STATS_STREAM_GROUP_KEY, id);
+            stringRedisTemplate.opsForStream().delete(stream, id);
+            clearRetryState(id.toString());
+            messageQueueIdempotentHandler.setAccomplish(id.toString());
         } catch (Throwable ex) {
-            // 某某某情况宕机了
             messageQueueIdempotentHandler.delMessageProcessed(id.toString());
-            log.error("记录短链接监控消费异常", ex);
-            throw ex;
+            if (reachRetryLimit(id.toString())) {
+                deadLetter(message, ex);
+                stringRedisTemplate.opsForStream().acknowledge(Objects.requireNonNull(stream), SHORT_LINK_STATS_STREAM_GROUP_KEY, id);
+                stringRedisTemplate.opsForStream().delete(stream, id);
+                clearRetryState(id.toString());
+                messageQueueIdempotentHandler.setAccomplish(id.toString());
+                return;
+            }
+            log.error("Record short-link stats consume exception", ex);
+            throw new ServiceException("short-link stats consume failed");
         }
-        messageQueueIdempotentHandler.setAccomplish(id.toString());
+    }
+
+    private boolean reachRetryLimit(String messageId) {
+        String retryCountKey = SHORT_LINK_STATS_STREAM_RETRY_COUNT_KEY + messageId;
+        Long retryTimes = stringRedisTemplate.opsForValue().increment(retryCountKey);
+        if (Objects.equals(retryTimes, 1L)) {
+            stringRedisTemplate.expire(retryCountKey, retryKeyTtlSeconds, TimeUnit.SECONDS);
+        }
+        return retryTimes != null && retryTimes > maxRetryTimes;
+    }
+
+    private void clearRetryState(String messageId) {
+        stringRedisTemplate.delete(SHORT_LINK_STATS_STREAM_RETRY_COUNT_KEY + messageId);
+    }
+
+    private void deadLetter(MapRecord<String, String, String> message, Throwable ex) {
+        Map<String, String> deadLetterMessage = new HashMap<>(message.getValue());
+        deadLetterMessage.put("messageId", message.getId().getValue());
+        deadLetterMessage.put("sourceStream", message.getStream());
+        deadLetterMessage.put("failedReason", ex == null ? "unknown" : String.valueOf(ex.getMessage()));
+        deadLetterMessage.put("failedAt", String.valueOf(System.currentTimeMillis()));
+        stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_DEAD_LETTER_TOPIC_KEY, deadLetterMessage);
+        log.error("Move stats message to dead letter stream. messageId={}", message.getId().getValue(), ex);
     }
 
     public void actualSaveShortLinkStats(ShortLinkStatsRecordDTO statsRecord) {
@@ -141,25 +182,25 @@ public class ShortLinkStatsSaveConsumer implements StreamListener<String, MapRec
                     .date(currentDate)
                     .build();
             linkAccessStatsMapper.shortLinkStats(linkAccessStatsDO);
-            //调用高德地图接口，根据ip解析地区
+            //璋冪敤楂樺痉鍦板浘鎺ュ彛锛屾牴鎹甶p瑙ｆ瀽鍦板尯
             Map<String, Object> localeParamMap = new HashMap<>();
             localeParamMap.put("key", statsLocaleAmapKey);
             localeParamMap.put("ip", statsRecord.getRemoteAddr());
             String localeResultStr = HttpUtil.get(AMAP_REMOTE_URL, localeParamMap);
             JSONObject localeResultObj = JSON.parseObject(localeResultStr);
             String infoCode = localeResultObj.getString("infocode");
-            String actualProvince = "未知";
-            String actualCity = "未知";
+            String actualProvince = "鏈煡";
+            String actualCity = "鏈煡";
             if (StrUtil.isNotBlank(infoCode) && StrUtil.equals(infoCode, "10000")) {
                 String province = localeResultObj.getString("province");
                 boolean unknownFlag = StrUtil.equals(province, "[]");
                 LinkLocaleStatsDO linkLocaleStatsDO = LinkLocaleStatsDO.builder()
                         .province(actualProvince = unknownFlag ? actualProvince : province)
                         .city(actualCity = unknownFlag ? actualCity : localeResultObj.getString("city"))
-                        .adcode(unknownFlag ? "未知" : localeResultObj.getString("adcode"))
+                        .adcode(unknownFlag ? "鏈煡" : localeResultObj.getString("adcode"))
                         .cnt(1)
                         .fullShortUrl(fullShortUrl)
-                        .country("中国")
+                        .country("涓浗")
                         .date(currentDate)
                         .build();
                 linkLocaleStatsMapper.shortLinkLocaleState(linkLocaleStatsDO);
@@ -199,7 +240,7 @@ public class ShortLinkStatsSaveConsumer implements StreamListener<String, MapRec
                     .os(statsRecord.getOs())
                     .network(statsRecord.getNetwork())
                     .device(statsRecord.getDevice())
-                    .locale(StrUtil.join("-", "中国", actualProvince, actualCity))
+                    .locale(StrUtil.join("-", "涓浗", actualProvince, actualCity))
                     .fullShortUrl(fullShortUrl)
                     .build();
             linkAccessLogsMapper.insert(linkAccessLogsDO);
@@ -217,3 +258,4 @@ public class ShortLinkStatsSaveConsumer implements StreamListener<String, MapRec
         }
     }
 }
+

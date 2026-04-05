@@ -32,7 +32,8 @@ build/
 ### VS Code ###
 .vscode/
 .claude/
-
+.cursor/
+.idea/
 ### Mac OS ###
 .DS_Store
 CLAUDE.md

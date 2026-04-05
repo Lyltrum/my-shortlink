@@ -68,6 +68,21 @@ public class RedisKeyConstant {
     public static final String SHORT_LINK_STATS_STREAM_GROUP_KEY = "short-link:stats-stream:only-group";
 
     /**
+     * 短链接监控消息队列消费者标识
+     */
+    public static final String SHORT_LINK_STATS_STREAM_CONSUMER_KEY = "stats-consumer";
+
+    /**
+     * 短链接监控消息死信队列 Topic
+     */
+    public static final String SHORT_LINK_STATS_STREAM_DEAD_LETTER_TOPIC_KEY = "short-link:stats-stream:dead-letter";
+
+    /**
+     * 短链接监控消息重试次数缓存 Key 前缀
+     */
+    public static final String SHORT_LINK_STATS_STREAM_RETRY_COUNT_KEY = "short-link:stats-stream:retry-count:";
+
+    /**
      * 创建短链接锁标识
      */
     public static final String SHORT_LINK_CREATE_LOCK_KEY = "short-link:lock:create";
