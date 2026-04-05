@@ -497,19 +497,31 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         return shorUri;
     }
 
-    @SneakyThrows
     private String getFavicon(String url) {
-        URL targetUrl = new URL(url);
-        HttpURLConnection connection = (HttpURLConnection) targetUrl.openConnection();
-        connection.setRequestMethod("GET");
-        connection.connect();
-        int responseCode = connection.getResponseCode();
-        if (HttpURLConnection.HTTP_OK == responseCode) {
-            Document document = Jsoup.connect(url).get();
-            Element faviconLink = document.select("link[rel~=(?i)^(shortcut )?icon]").first();
-            if (faviconLink != null) {
-                return faviconLink.attr("abs:href");
+        try {
+            URL targetUrl = new URL(url);
+            HttpURLConnection connection = (HttpURLConnection) targetUrl.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(1000);
+            connection.setReadTimeout(1000);
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0");
+            connection.connect();
+            int responseCode = connection.getResponseCode();
+            if (HttpURLConnection.HTTP_OK == responseCode) {
+                Document document = Jsoup.connect(url)
+                        .userAgent("Mozilla/5.0")
+                        .timeout(1000)
+                        .followRedirects(true)
+                        .ignoreHttpErrors(true)
+                        .get();
+                Element faviconLink = document.select("link[rel~=(?i)^(shortcut )?icon]").first();
+                if (faviconLink != null) {
+                    return faviconLink.attr("abs:href");
+                }
             }
+        } catch (Exception ex) {
+            log.warn("Failed to fetch favicon by url: {}", url, ex);
         }
         return null;
     }

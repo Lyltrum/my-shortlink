@@ -118,9 +118,16 @@ const fd = (fn, delay) => {
 }
 const queryTitle = (url) => {
   if (reg.test(url)) {
-    API.smallLinkPage.queryTitle({ url: url }).then(res => {
-      formData.describe = res?.data?.data
-    })
+    API.smallLinkPage.queryTitle({ url: url })
+      .then(res => {
+        const title = (res?.data?.data || '').trim()
+        if (title) {
+          formData.describe = title
+        }
+      })
+      .catch(() => {
+        // ignore title fetch errors and keep current description
+      })
   }
 }
 const getTitle = fd(queryTitle, 1000)

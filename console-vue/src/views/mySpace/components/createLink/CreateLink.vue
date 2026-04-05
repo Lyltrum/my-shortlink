@@ -162,10 +162,19 @@ const isLoading = ref(false)
 const queryTitle = (url) => {
   if (reg.test(url)) {
     isLoading.value = true
-    API.smallLinkPage.queryTitle({ url: url }).then((res) => {
-      formData.describe = res?.data?.data
-      isLoading.value = false
-    })
+    API.smallLinkPage.queryTitle({ url: url })
+      .then((res) => {
+        const title = (res?.data?.data || '').trim()
+        if (title) {
+          formData.describe = title
+        }
+      })
+      .catch(() => {
+        // ignore title fetch errors and allow user to input description manually
+      })
+      .finally(() => {
+        isLoading.value = false
+      })
   }
 }
 const getTitle = fd(queryTitle, 1000)
@@ -286,31 +295,94 @@ const emits = defineEmits(['onSubmit', 'cancel'])
 // 点击确定按钮后的校验
 const ruleFormRef = ref()
 const submitDisable = ref(false)
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const isServiceUnavailable = (message, error) => {
+  const text = `${message || ''} ${error?.response?.data?.message || ''} ${error?.message || ''}`.toLowerCase()
+  const status = error?.response?.status
+  return status === 503 || text.includes('unavailable') || text.includes('不可用') || text.includes('暂时')
+}
+const verifyCreatedByQuery = async () => {
+  try {
+    const verifyRes = await API.smallLinkPage.queryPage({
+      gid: formData.gid,
+      current: 1,
+      size: 15,
+      orderTag: null
+    })
+    if (!verifyRes?.data?.success) {
+      return false
+    }
+    const records = verifyRes?.data?.data?.records || []
+    return records.some((item) => item.originUrl === formData.originUrl && item.describe === formData.describe)
+  } catch (e) {
+    return false
+  }
+}
+const verifyCreatedByRetry = async (times = 5, delayMs = 700) => {
+  for (let i = 0; i < times; i++) {
+    const created = await verifyCreatedByQuery()
+    if (created) {
+      return true
+    }
+    if (i < times - 1) {
+      await sleep(delayMs)
+    }
+  }
+  return false
+}
 const onSubmit = async (formEl) => {
   submitDisable.value = true
   if (!formEl) {
     submitDisable.value = false
     return
   }
-  await formEl.validate(async (valid, fields) => {
+  await formEl.validate(async (valid) => {
     if (valid) {
-      const res = await API.smallLinkPage.addSmallLink(formData)
-      if (!res?.data?.success) {
-        if (res?.data?.code === 'A000001') {
-          ElMessage.warning({
-            message: res.data.message,
-            duration: 5000
-          })
+      try {
+        const res = await API.smallLinkPage.addSmallLink(formData)
+        if (!res?.data?.success) {
+          const message = res?.data?.message || ''
+          if (isServiceUnavailable(message)) {
+            const alreadyCreated = await verifyCreatedByRetry()
+            if (alreadyCreated) {
+              ElMessage.success('创建成功！')
+              emits('onSubmit', false)
+              return
+            }
+            ElMessage.warning('创建请求已提交，结果确认中，请稍后刷新列表')
+            return
+          }
+          if (res?.data?.code === 'A000001') {
+            ElMessage.warning({
+              message: res.data.message,
+              duration: 5000
+            })
+          } else {
+            ElMessage.error(res?.data?.message || '创建失败！')
+          }
         } else {
-          ElMessage.error(res.data.message)
+          ElMessage.success('创建成功！')
+          emits('onSubmit', false)
         }
-      } else {
-        ElMessage.success('创建成功！')
-        emits('onSubmit', false)
+      } catch (error) {
+        const alreadyCreated = await verifyCreatedByRetry()
+        if (alreadyCreated) {
+          ElMessage.success('创建成功！')
+          emits('onSubmit', false)
+          return
+        }
+        if (isServiceUnavailable('', error)) {
+          ElMessage.warning('创建请求已提交，结果确认中，请稍后刷新列表')
+          return
+        }
+        const message = error?.response?.data?.message || error?.message || '创建失败！'
+        ElMessage.error(message)
+      } finally {
         submitDisable.value = false
       }
     } else {
       ElMessage.error('创建失败！')
+      submitDisable.value = false
     }
   })
 }

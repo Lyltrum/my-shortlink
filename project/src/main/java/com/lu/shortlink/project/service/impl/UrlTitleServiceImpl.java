@@ -18,32 +18,35 @@
 package com.lu.shortlink.project.service.impl;
 
 import com.lu.shortlink.project.service.UrlTitleService;
-import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
 
-import java.net.HttpURLConnection;
-import java.net.URL;
-
 /**
- * URL 标题接口实现层
+ * URL title service implementation.
  */
+@Slf4j
 @Service
 public class UrlTitleServiceImpl implements UrlTitleService {
 
-    @SneakyThrows
     @Override
     public String getTitleByUrl(String url) {
-        URL targetUrl = new URL(url);
-        HttpURLConnection connection = (HttpURLConnection) targetUrl.openConnection();
-        connection.setRequestMethod("GET");
-        connection.connect();
-        int responseCode = connection.getResponseCode();
-        if (responseCode == HttpURLConnection.HTTP_OK) {
-            Document document = Jsoup.connect(url).get();
-            return document.title();
+        try {
+            Document document = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                    .referrer("https://www.google.com")
+                    .timeout(8000)
+                    .followRedirects(true)
+                    .ignoreHttpErrors(true)
+                    .get();
+            String title = document.title();
+            if (title != null && !title.isBlank()) {
+                return title.trim();
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to fetch title by url: {}", url, ex);
         }
-        return "Error while fetching title.";
+        return "";
     }
 }

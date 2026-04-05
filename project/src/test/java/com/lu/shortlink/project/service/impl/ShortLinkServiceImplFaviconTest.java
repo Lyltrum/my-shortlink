@@ -1,0 +1,55 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.lu.shortlink.project.service.impl;
+
+import com.lu.shortlink.project.cache.ShortLinkCacheManager;
+import com.lu.shortlink.project.config.GotoDomainWhiteListConfiguration;
+import com.lu.shortlink.project.dao.mapper.ShortLinkGotoMapper;
+import com.lu.shortlink.project.mq.producer.ShortLinkStatsSaveProducer;
+import org.junit.jupiter.api.Test;
+import org.redisson.api.RBloomFilter;
+import org.redisson.api.RedissonClient;
+import org.springframework.data.redis.core.StringRedisTemplate;
+
+import java.lang.reflect.Method;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.mock;
+
+class ShortLinkServiceImplFaviconTest {
+
+    @Test
+    void getFavicon_shouldNotThrow_whenUrlIsInvalid() throws Exception {
+        ShortLinkServiceImpl service = new ShortLinkServiceImpl(
+                mock(RBloomFilter.class),
+                mock(ShortLinkGotoMapper.class),
+                mock(StringRedisTemplate.class),
+                mock(RedissonClient.class),
+                mock(ShortLinkStatsSaveProducer.class),
+                mock(GotoDomainWhiteListConfiguration.class),
+                mock(ShortLinkCacheManager.class)
+        );
+
+        Method method = ShortLinkServiceImpl.class.getDeclaredMethod("getFavicon", String.class);
+        method.setAccessible(true);
+        Object result = assertDoesNotThrow(() -> method.invoke(service, "not-a-valid-url"));
+        assertNull(result);
+    }
+}
+

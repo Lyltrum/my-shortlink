@@ -21,7 +21,7 @@ spring:
     gateway:
       httpclient:
         connect-timeout: 2000
-        response-timeout: 5s
+        response-timeout: 10s
     circuitbreaker:
       sentinel:
         enabled: false

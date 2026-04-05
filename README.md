@@ -1,4 +1,4 @@
-# my-shortlink
+﻿# my-shortlink
 
 一个基于 `Spring Boot + Spring Cloud + Vue 3` 的 SaaS 短链接系统，采用微服务拆分（`gateway/admin/project`），支持短链创建、跳转、分组管理、回收站、访问统计、JWT 鉴权等能力。
 
