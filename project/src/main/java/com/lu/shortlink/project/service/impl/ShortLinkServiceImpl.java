@@ -20,7 +20,6 @@ package com.lu.shortlink.project.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.text.StrBuilder;
-import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -36,7 +35,6 @@ import com.lu.shortlink.project.dao.entity.ShortLinkDO;
 import com.lu.shortlink.project.dao.entity.ShortLinkGotoDO;
 import com.lu.shortlink.project.dao.mapper.ShortLinkGotoMapper;
 import com.lu.shortlink.project.dao.mapper.ShortLinkMapper;
-import com.lu.shortlink.project.dto.biz.RawStatsSnapshot;
 import com.lu.shortlink.project.dto.req.ShortLinkCreateReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkPageReqDTO;
 import com.lu.shortlink.project.dto.req.ShortLinkUpdateReqDTO;
@@ -45,17 +43,16 @@ import com.lu.shortlink.project.dto.resp.ShortLinkCreateRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkGroupCountQueryRespDTO;
 import com.lu.shortlink.project.dto.resp.ShortLinkPageRespDTO;
 import com.lu.shortlink.project.cache.ShortLinkCacheManager;
-import com.lu.shortlink.project.mq.producer.ShortLinkStatsSaveProducer;
+import com.lu.shortlink.project.handler.redirect.RedirectContext;
+import com.lu.shortlink.project.handler.redirect.RedirectHandlerChain;
 import com.lu.shortlink.project.service.ShortLinkService;
 import com.lu.shortlink.project.toolkit.HashUtil;
 import com.lu.shortlink.project.toolkit.LinkUtil;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -72,19 +69,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.GOTO_IS_NULL_SHORT_LINK_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.LOCK_GID_UPDATE_KEY;
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.LOCK_GOTO_SHORT_LINK_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_CREATE_LOCK_KEY;
 
 /**
@@ -99,9 +91,9 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
     private final ShortLinkGotoMapper shortLinkGotoMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final RedissonClient redissonClient;
-    private final ShortLinkStatsSaveProducer shortLinkStatsSaveProducer;
     private final GotoDomainWhiteListConfiguration gotoDomainWhiteListConfiguration;
     private final ShortLinkCacheManager shortLinkCacheManager;
+    private final RedirectHandlerChain redirectHandlerChain;
 
     @Value("${short-link.domain.default}")
     private String createShortLinkDefaultDomain;
@@ -329,11 +321,8 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         return BeanUtil.copyToList(shortLinkDOList, ShortLinkGroupCountQueryRespDTO.class);
     }
 
-    @SneakyThrows
     @Override
     public void restoreUrl(String shortUri, ServletRequest request, ServletResponse response) {
-        // 短链接接口的并发量有多少？如何测试？
-        // 面试中如何回答短链接是如何跳转长链接？
         String serverName = request.getServerName();
         String serverPort = Optional.of(request.getServerPort())
                 .filter(each -> !Objects.equals(each, 80))
@@ -341,115 +330,12 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
                 .map(each -> ":" + each)
                 .orElse("");
         String fullShortUrl = serverName + serverPort + "/" + shortUri;
-
-// L1 → L2 多级缓存命中
-        String cachedUrl = shortLinkCacheManager.get(fullShortUrl);
-        if (cachedUrl != null) {
-            shortLinkStats(buildRawStatsSnapshot(fullShortUrl, request, response));
-            ((HttpServletResponse) response).sendRedirect(cachedUrl);
-            return;
-        }
-        // 布隆过滤器判断 如果不存在则一定不存在
-        boolean contains = shortUriCreateCachePenetrationBloomFilter.contains(fullShortUrl);
-        if (!contains) {
-            ((HttpServletResponse) response).sendRedirect("/page/notfound");
-            return;
-        }
-
-
-        // 如果存在也可能不存在
-        String gotoIsNullShortLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_IS_NULL_SHORT_LINK_KEY, fullShortUrl));
-        if (StrUtil.isNotBlank(gotoIsNullShortLink)) {
-            // redis中确实是空值 则跳转notfound
-            ((HttpServletResponse) response).sendRedirect("/page/notfound");
-            return;
-        }
-        RLock lock = redissonClient.getLock(String.format(LOCK_GOTO_SHORT_LINK_KEY, fullShortUrl));
-        lock.lock();
-        try {
-            // 多级缓存 double check
-            String doubleCheckUrl = shortLinkCacheManager.get(fullShortUrl);
-            if (doubleCheckUrl != null) {
-                shortLinkStats(buildRawStatsSnapshot(fullShortUrl, request, response));
-                ((HttpServletResponse) response).sendRedirect(doubleCheckUrl);
-                return;
-            }
-            // 空值缓存double check
-            gotoIsNullShortLink = stringRedisTemplate.opsForValue().get(String.format(GOTO_IS_NULL_SHORT_LINK_KEY, fullShortUrl));
-            if (StrUtil.isNotBlank(gotoIsNullShortLink)) {
-                ((HttpServletResponse) response).sendRedirect("/page/notfound");
-                return;
-            }
-
-            // 查数据库 先查goto路由表
-
-            LambdaQueryWrapper<ShortLinkGotoDO> linkGotoQueryWrapper = Wrappers.lambdaQuery(ShortLinkGotoDO.class)
-                    .eq(ShortLinkGotoDO::getFullShortUrl, fullShortUrl);
-            ShortLinkGotoDO shortLinkGotoDO = shortLinkGotoMapper.selectOne(linkGotoQueryWrapper);
-            //布隆过滤器误判
-            if (shortLinkGotoDO == null) {
-                stringRedisTemplate.opsForValue().set(String.format(GOTO_IS_NULL_SHORT_LINK_KEY, fullShortUrl), "-", 30, TimeUnit.MINUTES);
-                ((HttpServletResponse) response).sendRedirect("/page/notfound");
-                return;
-            }
-            //查主表
-            LambdaQueryWrapper<ShortLinkDO> queryWrapper = Wrappers.lambdaQuery(ShortLinkDO.class)
-                    .eq(ShortLinkDO::getGid, shortLinkGotoDO.getGid())
-                    .eq(ShortLinkDO::getFullShortUrl, fullShortUrl)
-                    .eq(ShortLinkDO::getDelFlag, 0)
-                    .eq(ShortLinkDO::getEnableStatus, 0);
-            ShortLinkDO shortLinkDO = baseMapper.selectOne(queryWrapper);
-            //主表不存在或者有效期过期
-            if (shortLinkDO == null || (shortLinkDO.getValidDate() != null && shortLinkDO.getValidDate().before(new Date()))) {
-                stringRedisTemplate.opsForValue().set(String.format(GOTO_IS_NULL_SHORT_LINK_KEY, fullShortUrl), "-", 30, TimeUnit.MINUTES);
-                ((HttpServletResponse) response).sendRedirect("/page/notfound");
-                return;
-            }
-            //存在了 存入缓存
-            shortLinkCacheManager.put(fullShortUrl, shortLinkDO.getOriginUrl(), shortLinkDO.getValidDate());
-            shortLinkStats(buildRawStatsSnapshot(fullShortUrl, request, response));
-            ((HttpServletResponse) response).sendRedirect(shortLinkDO.getOriginUrl());
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    /**
-     * 提取跳转请求的原始快照。
-     * 主线程保留的操作：Cookie 读写（必须在 sendRedirect 前）+ IP/UA 原始值读取。
-     * 移出主线程的操作：Redis SADD UV/UIP、UA 字符串解析（移至 flush 线程批量处理）。
-     */
-    private RawStatsSnapshot buildRawStatsSnapshot(String fullShortUrl, ServletRequest request, ServletResponse response) {
-        Cookie[] cookies = ((HttpServletRequest) request).getCookies();
-        AtomicReference<String> uv = new AtomicReference<>();
-        Runnable addResponseCookieTask = () -> {
-            uv.set(UUID.fastUUID().toString());
-            Cookie uvCookie = new Cookie("uv", uv.get());
-            uvCookie.setMaxAge(60 * 60 * 24 * 30);
-            uvCookie.setPath(StrUtil.sub(fullShortUrl, fullShortUrl.indexOf("/"), fullShortUrl.length()));
-            ((HttpServletResponse) response).addCookie(uvCookie);
-        };
-        if (ArrayUtil.isNotEmpty(cookies)) {
-            Arrays.stream(cookies)
-                    .filter(each -> Objects.equals(each.getName(), "uv"))
-                    .findFirst()
-                    .map(Cookie::getValue)
-                    .ifPresentOrElse(uv::set, addResponseCookieTask);
-        } else {
-            addResponseCookieTask.run();
-        }
-        return RawStatsSnapshot.builder()
+        RedirectContext ctx = RedirectContext.builder()
                 .fullShortUrl(fullShortUrl)
-                .uv(uv.get())
-                .remoteAddr(LinkUtil.getActualIp((HttpServletRequest) request))
-                .userAgent(((HttpServletRequest) request).getHeader("User-Agent"))
-                .currentDate(new Date())
+                .request((HttpServletRequest) request)
+                .response((HttpServletResponse) response)
                 .build();
-    }
-
-    @Override
-    public void shortLinkStats(RawStatsSnapshot snapshot) {
-        shortLinkStatsSaveProducer.send(snapshot);
+        redirectHandlerChain.proceed(ctx);
     }
 
     private String generateSuffix(ShortLinkCreateReqDTO requestParam) {
