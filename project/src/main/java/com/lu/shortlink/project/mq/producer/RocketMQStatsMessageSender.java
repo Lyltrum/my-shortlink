@@ -15,32 +15,33 @@
  * limitations under the License.
  */
 
-package com.lu.shortlink.project.initialize;
+package com.lu.shortlink.project.mq.producer;
 
+import com.alibaba.fastjson2.JSON;
+import com.lu.shortlink.project.dto.biz.ShortLinkStatsRecordDTO;
+import com.lu.shortlink.project.mq.StatsMessageSender;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.InitializingBean;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
-
 /**
- * 初始化短链接监控消息队列消费者组
+ * RocketMQ 实现：将统计 DTO 同步发送到 short-link-stats-topic。
+ * short-link.stats.mq.type=rocketmq 时生效。
  */
 @Component
-@ConditionalOnProperty(name = "short-link.stats.mq.type", havingValue = "redis-stream", matchIfMissing = true)
+@ConditionalOnProperty(name = "short-link.stats.mq.type", havingValue = "rocketmq")
 @RequiredArgsConstructor
-public class ShortLinkStatsStreamInitializeTask implements InitializingBean {
+public class RocketMQStatsMessageSender implements StatsMessageSender {
 
-    private final StringRedisTemplate stringRedisTemplate;
+    private final RocketMQTemplate rocketMQTemplate;
 
     @Override
-    public void afterPropertiesSet() throws Exception {
-        Boolean hasKey = stringRedisTemplate.hasKey(SHORT_LINK_STATS_STREAM_TOPIC_KEY);
-        if (hasKey == null || !hasKey) {
-            stringRedisTemplate.opsForStream().createGroup(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_STREAM_GROUP_KEY);
-        }
+    public void send(ShortLinkStatsRecordDTO statsRecord) {
+        rocketMQTemplate.syncSend(
+                "short-link-stats-topic",
+                MessageBuilder.withPayload(JSON.toJSONString(statsRecord)).build()
+        );
     }
 }

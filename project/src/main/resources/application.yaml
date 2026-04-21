@@ -35,8 +35,21 @@ short-link:
   domain:
     default: localhost:8001
   stats:
+    # MQ 实现切换：redis-stream（默认）或 rocketmq
+    mq:
+      type: rocketmq
     locale:
       amap-key: your-amap-key-here
+
+rocketmq:
+  name-server: 127.0.0.1:9876
+  producer:
+    group: short-link-stats-producer-group
+    send-message-timeout: 3000
+    retry-times-when-send-failed: 2
+# 注意：若 Broker 日志中 brokerIP1 为容器内网 IP 导致生产者/消费者无法连接，
+#       需在 rmqbroker 容器中执行：echo 'brokerIP1=127.0.0.1' >> /home/rocketmq/rocketmq-5.3.1/conf/broker.conf
+#       并重启容器：docker restart rmqbroker
   goto-domain:
     white-list:
       enable: false

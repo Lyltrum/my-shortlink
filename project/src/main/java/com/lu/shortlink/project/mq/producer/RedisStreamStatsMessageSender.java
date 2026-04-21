@@ -15,32 +15,36 @@
  * limitations under the License.
  */
 
-package com.lu.shortlink.project.initialize;
+package com.lu.shortlink.project.mq.producer;
 
+import com.alibaba.fastjson2.JSON;
+import com.lu.shortlink.project.dto.biz.ShortLinkStatsRecordDTO;
+import com.lu.shortlink.project.mq.StatsMessageSender;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_GROUP_KEY;
+import java.util.HashMap;
+import java.util.Map;
+
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
 
 /**
- * 初始化短链接监控消息队列消费者组
+ * Redis Stream 实现：将统计 DTO 写入 Stream。
+ * short-link.stats.mq.type=redis-stream 时生效（默认）。
  */
 @Component
 @ConditionalOnProperty(name = "short-link.stats.mq.type", havingValue = "redis-stream", matchIfMissing = true)
 @RequiredArgsConstructor
-public class ShortLinkStatsStreamInitializeTask implements InitializingBean {
+public class RedisStreamStatsMessageSender implements StatsMessageSender {
 
     private final StringRedisTemplate stringRedisTemplate;
 
     @Override
-    public void afterPropertiesSet() throws Exception {
-        Boolean hasKey = stringRedisTemplate.hasKey(SHORT_LINK_STATS_STREAM_TOPIC_KEY);
-        if (hasKey == null || !hasKey) {
-            stringRedisTemplate.opsForStream().createGroup(SHORT_LINK_STATS_STREAM_TOPIC_KEY, SHORT_LINK_STATS_STREAM_GROUP_KEY);
-        }
+    public void send(ShortLinkStatsRecordDTO statsRecord) {
+        Map<String, String> producerMap = new HashMap<>();
+        producerMap.put("statsRecord", JSON.toJSONString(statsRecord));
+        stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_TOPIC_KEY, producerMap);
     }
 }

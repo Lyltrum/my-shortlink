@@ -20,6 +20,7 @@ package com.lu.shortlink.project.mq.consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.PendingMessage;
@@ -44,6 +45,7 @@ import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LI
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(name = "short-link.stats.mq.type", havingValue = "redis-stream", matchIfMissing = true)
 @RequiredArgsConstructor
 public class ShortLinkStatsPendingReclaimScheduler {
 

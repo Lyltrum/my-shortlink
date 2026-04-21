@@ -18,23 +18,12 @@
 package com.lu.shortlink.project.mq.consumer;
 
 import com.lu.shortlink.project.common.convention.exception.ServiceException;
-import com.lu.shortlink.project.dao.mapper.LinkAccessLogsMapper;
-import com.lu.shortlink.project.dao.mapper.LinkAccessStatsMapper;
-import com.lu.shortlink.project.dao.mapper.LinkBrowserStatsMapper;
-import com.lu.shortlink.project.dao.mapper.LinkDeviceStatsMapper;
-import com.lu.shortlink.project.dao.mapper.LinkLocaleStatsMapper;
-import com.lu.shortlink.project.dao.mapper.LinkNetworkStatsMapper;
-import com.lu.shortlink.project.dao.mapper.LinkOsStatsMapper;
-import com.lu.shortlink.project.dao.mapper.LinkStatsTodayMapper;
-import com.lu.shortlink.project.dao.mapper.ShortLinkGotoMapper;
-import com.lu.shortlink.project.dao.mapper.ShortLinkMapper;
 import com.lu.shortlink.project.mq.idempotent.MessageQueueIdempotentHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.core.StreamOperations;
@@ -53,42 +42,21 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.lenient;
 
 @SuppressWarnings("unchecked")
 @ExtendWith(MockitoExtension.class)
 class ShortLinkStatsSaveConsumerTest {
 
     @Mock
-    private ShortLinkMapper shortLinkMapper;
-    @Mock
-    private ShortLinkGotoMapper shortLinkGotoMapper;
-    @Mock
-    private RedissonClient redissonClient;
-    @Mock
-    private LinkAccessStatsMapper linkAccessStatsMapper;
-    @Mock
-    private LinkLocaleStatsMapper linkLocaleStatsMapper;
-    @Mock
-    private LinkOsStatsMapper linkOsStatsMapper;
-    @Mock
-    private LinkBrowserStatsMapper linkBrowserStatsMapper;
-    @Mock
-    private LinkAccessLogsMapper linkAccessLogsMapper;
-    @Mock
-    private LinkDeviceStatsMapper linkDeviceStatsMapper;
-    @Mock
-    private LinkNetworkStatsMapper linkNetworkStatsMapper;
-    @Mock
-    private LinkStatsTodayMapper linkStatsTodayMapper;
-    @Mock
     private StringRedisTemplate stringRedisTemplate;
     @Mock
     private MessageQueueIdempotentHandler messageQueueIdempotentHandler;
+    @Mock
+    private ShortLinkStatsHandler statsHandler;
     @Mock
     private StreamOperations<String, String, String> streamOperations;
     @Mock
@@ -102,21 +70,7 @@ class ShortLinkStatsSaveConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = spy(new ShortLinkStatsSaveConsumer(
-                shortLinkMapper,
-                shortLinkGotoMapper,
-                redissonClient,
-                linkAccessStatsMapper,
-                linkLocaleStatsMapper,
-                linkOsStatsMapper,
-                linkBrowserStatsMapper,
-                linkAccessLogsMapper,
-                linkDeviceStatsMapper,
-                linkNetworkStatsMapper,
-                linkStatsTodayMapper,
-                stringRedisTemplate,
-                messageQueueIdempotentHandler
-        ));
+        consumer = new ShortLinkStatsSaveConsumer(stringRedisTemplate, messageQueueIdempotentHandler, statsHandler);
         ReflectionTestUtils.setField(consumer, "maxRetryTimes", 5);
         ReflectionTestUtils.setField(consumer, "retryKeyTtlSeconds", 86400L);
         lenient().when(stringRedisTemplate.opsForStream()).thenReturn((StreamOperations) streamOperations);
@@ -130,7 +84,7 @@ class ShortLinkStatsSaveConsumerTest {
 
     @Test
     void onMessageShouldAcknowledgeAndDeleteWhenConsumeSuccess() {
-        doNothing().when(consumer).actualSaveShortLinkStats(any());
+        doNothing().when(statsHandler).saveStats(any());
 
         consumer.onMessage(message);
 
@@ -141,7 +95,7 @@ class ShortLinkStatsSaveConsumerTest {
 
     @Test
     void onMessageShouldThrowWhenConsumeFailedAndRetryNotExceed() {
-        doThrow(new RuntimeException("boom")).when(consumer).actualSaveShortLinkStats(any());
+        doThrow(new RuntimeException("boom")).when(statsHandler).saveStats(any());
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.increment(SHORT_LINK_STATS_STREAM_RETRY_COUNT_KEY + "1-0")).thenReturn(1L);
 
@@ -155,7 +109,7 @@ class ShortLinkStatsSaveConsumerTest {
 
     @Test
     void onMessageShouldMoveToDeadLetterWhenRetryExceeded() {
-        doThrow(new RuntimeException("boom")).when(consumer).actualSaveShortLinkStats(any());
+        doThrow(new RuntimeException("boom")).when(statsHandler).saveStats(any());
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.increment(SHORT_LINK_STATS_STREAM_RETRY_COUNT_KEY + "1-0")).thenReturn(6L);
 

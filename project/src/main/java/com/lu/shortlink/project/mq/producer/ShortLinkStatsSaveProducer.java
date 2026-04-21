@@ -17,11 +17,11 @@
 
 package com.lu.shortlink.project.mq.producer;
 
-import com.alibaba.fastjson2.JSON;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.lu.shortlink.project.cache.ParsedUA;
 import com.lu.shortlink.project.dto.biz.RawStatsSnapshot;
 import com.lu.shortlink.project.dto.biz.ShortLinkStatsRecordDTO;
+import com.lu.shortlink.project.mq.StatsMessageSender;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.StringRedisConnection;
@@ -30,12 +30,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_STREAM_TOPIC_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_UIP_KEY;
 import static com.lu.shortlink.project.common.constant.RedisKeyConstant.SHORT_LINK_STATS_UV_KEY;
 
@@ -52,6 +49,7 @@ public class ShortLinkStatsSaveProducer {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final Cache<String, ParsedUA> uaParsingCache;
+    private final StatsMessageSender statsMessageSender;
 
     //缓冲
     private final ConcurrentLinkedQueue<RawStatsSnapshot> statsBuffer = new ConcurrentLinkedQueue<>();
@@ -123,9 +121,7 @@ public class ShortLinkStatsSaveProducer {
                         .currentDate(snapshot.getCurrentDate())
                         .build();
 
-                Map<String, String> producerMap = new HashMap<>();
-                producerMap.put("statsRecord", JSON.toJSONString(statsRecord));
-                stringRedisTemplate.opsForStream().add(SHORT_LINK_STATS_STREAM_TOPIC_KEY, producerMap);
+                statsMessageSender.send(statsRecord);
             } catch (Exception e) {
                 log.error("统计记录写入 Redis Stream 失败，重新入队。snapshot={}", snapshot, e);
                 statsBuffer.offer(snapshot);
