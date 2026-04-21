@@ -143,19 +143,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, UserDO> implements 
 
     @Override
     public UserLoginRespDTO refreshAccessToken(String refreshToken) {
+
+        //解析refreshtoken
         Claims refreshTokenClaims;
         try {
             refreshTokenClaims = jwtTokenService.parseRefreshToken(refreshToken);
         } catch (Exception e) {
             throw new ClientException("Refresh Token 已过期或无效");
         }
+
+        //获取username和tokenversion userid
         String userId = refreshTokenClaims.getSubject();
         String username = refreshTokenClaims.get("username", String.class);
         Number tokenVersionInToken = refreshTokenClaims.get("tokenVersion", Number.class);
+        //获取redis里的版本号
         long tokenVersion = tokenVersionService.getTokenVersion(userId);
         if (tokenVersionInToken == null || tokenVersionInToken.longValue() != tokenVersion) {
             throw new ClientException("Refresh Token 已失效，请重新登录");
         }
+    
+
         String newAccessToken = jwtTokenService.generateAccessToken(userId, username, tokenVersion);
         String newRefreshToken = jwtTokenService.generateRefreshToken(userId, username, tokenVersion);
         long expiresIn = jwtTokenService.getAccessTokenTtl();

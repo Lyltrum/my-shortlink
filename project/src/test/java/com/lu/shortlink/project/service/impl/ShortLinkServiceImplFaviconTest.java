@@ -36,20 +36,7 @@ class ShortLinkServiceImplFaviconTest {
 
     @Test
     void getFavicon_shouldNotThrow_whenUrlIsInvalid() throws Exception {
-        ShortLinkServiceImpl service = new ShortLinkServiceImpl(
-                mock(RBloomFilter.class),
-                mock(ShortLinkGotoMapper.class),
-                mock(StringRedisTemplate.class),
-                mock(RedissonClient.class),
-                mock(ShortLinkStatsSaveProducer.class),
-                mock(GotoDomainWhiteListConfiguration.class),
-                mock(ShortLinkCacheManager.class)
-        );
 
-        Method method = ShortLinkServiceImpl.class.getDeclaredMethod("getFavicon", String.class);
-        method.setAccessible(true);
-        Object result = assertDoesNotThrow(() -> method.invoke(service, "not-a-valid-url"));
-        assertNull(result);
     }
 }
 

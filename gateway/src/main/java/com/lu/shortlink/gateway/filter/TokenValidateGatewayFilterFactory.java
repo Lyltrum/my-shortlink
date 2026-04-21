@@ -69,6 +69,7 @@ public class TokenValidateGatewayFilterFactory extends AbstractGatewayFilterFact
                 return writeError(exchange, "Missing or invalid Authorization header");
             }
             String token = authHeader.substring(7);
+
             try {
                 Claims claims = jwtConfig.parseAccessToken(token);
                 String userId = claims.getSubject();
@@ -78,7 +79,7 @@ public class TokenValidateGatewayFilterFactory extends AbstractGatewayFilterFact
                 if (tokenVersionInToken == null || tokenVersionInToken.longValue() != tokenVersionInStore) {
                     return writeError(exchange, "Token has been revoked");
                 }
-                ServerHttpRequest mutatedRequest = request.mutate()
+                ServerHttpRequest mutatedRequest = request.mutate()  
                         .headers(httpHeaders -> {
                             httpHeaders.set("userId", userId);
                             httpHeaders.set("username", URLEncoder.encode(username, StandardCharsets.UTF_8));

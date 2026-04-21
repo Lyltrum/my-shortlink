@@ -53,6 +53,7 @@ public class ShortLinkStatsSaveProducer {
     private final StringRedisTemplate stringRedisTemplate;
     private final Cache<String, ParsedUA> uaParsingCache;
 
+    //缓冲
     private final ConcurrentLinkedQueue<RawStatsSnapshot> statsBuffer = new ConcurrentLinkedQueue<>();
 
     /**
@@ -90,7 +91,7 @@ public class ShortLinkStatsSaveProducer {
                     conn.sAdd(SHORT_LINK_STATS_UV_KEY + snapshot.getFullShortUrl(), snapshot.getUv());
                     conn.sAdd(SHORT_LINK_STATS_UIP_KEY + snapshot.getFullShortUrl(), snapshot.getRemoteAddr());
                 }
-                return null;
+                return null; // 返回null表示让Pipeline自己处理结果收集
             });
         } catch (Exception e) {
             log.error("Pipeline SADD 批量执行失败，重新入队 {} 条记录", batch.size(), e);

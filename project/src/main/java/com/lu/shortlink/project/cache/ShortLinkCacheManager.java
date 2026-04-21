@@ -66,10 +66,15 @@ public class ShortLinkCacheManager {
                 return local.originUrl();
             }
         }
-        String redisUrl = stringRedisTemplate.opsForValue().get(String.format(GOTO_SHORT_LINK_KEY, fullShortUrl));
+        String redisKey = String.format(GOTO_SHORT_LINK_KEY, fullShortUrl);
+        String redisUrl = stringRedisTemplate.opsForValue().get(redisKey);
         if (l1Enabled && StrUtil.isNotBlank(redisUrl)) {
-            // 回填 L1：此处无法获取原始 validDate，使用永久条目（Caffeine 默认 1min TTL）
-            shortLinkLocalCache.put(fullShortUrl, ShortLinkCacheEntry.permanent(redisUrl));
+            // 回填 L1：从 Redis 读取剩余 TTL，还原业务过期时间，使 isBusinessExpired() 能正确兜底
+            Long ttlMs = stringRedisTemplate.getExpire(redisKey, TimeUnit.MILLISECONDS);
+            ShortLinkCacheEntry entry = (ttlMs != null && ttlMs > 0)
+                    ? ShortLinkCacheEntry.withExpiry(redisUrl, System.currentTimeMillis() + ttlMs)
+                    : ShortLinkCacheEntry.permanent(redisUrl);
+            shortLinkLocalCache.put(fullShortUrl, entry);
         }
         return StrUtil.isNotBlank(redisUrl) ? redisUrl : null;
     }

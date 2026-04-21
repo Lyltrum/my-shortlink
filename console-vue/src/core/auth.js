@@ -11,7 +11,7 @@ export function getUsername() {
 }
 
 export function setToken(token) {
-  return Cookies.set(TokenKey, token)
+  return Cookies.set(TokenKey, token, { expires: 1/48 }) // 30分钟，和AT有效期一致
 }
 
 export function setUsername(username) {
@@ -19,7 +19,7 @@ export function setUsername(username) {
 }
 
 export function setRefreshToken(token) {
-  return Cookies.set(RefreshTokenKey, token)
+  return Cookies.set(RefreshTokenKey, token, { expires: 7 }) // 7天
 }
 
 export function getRefreshToken() {

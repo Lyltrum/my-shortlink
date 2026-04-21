@@ -113,15 +113,22 @@ public class ShortLinkStatsSaveConsumer implements StreamListener<String, MapRec
             throw new ServiceException("short-link stats message is in progress");
         }
         try {
+            //解析消息体
             Map<String, String> producerMap = message.getValue();
             ShortLinkStatsRecordDTO statsRecord = JSON.parseObject(producerMap.get("statsRecord"), ShortLinkStatsRecordDTO.class);
+            //保存统计数据
             actualSaveShortLinkStats(statsRecord);
+            //ack+delet
             stringRedisTemplate.opsForStream().acknowledge(Objects.requireNonNull(stream), SHORT_LINK_STATS_STREAM_GROUP_KEY, id);
             stringRedisTemplate.opsForStream().delete(stream, id);
+            //清除重试次数
             clearRetryState(id.toString());
+            //设置消息处理完成
             messageQueueIdempotentHandler.setAccomplish(id.toString());
         } catch (Throwable ex) {
+            //删除消息处理完成
             messageQueueIdempotentHandler.delMessageProcessed(id.toString());
+            //如果达到重试次数，则将消息移动到死信队列
             if (reachRetryLimit(id.toString())) {
                 deadLetter(message, ex);
                 stringRedisTemplate.opsForStream().acknowledge(Objects.requireNonNull(stream), SHORT_LINK_STATS_STREAM_GROUP_KEY, id);
